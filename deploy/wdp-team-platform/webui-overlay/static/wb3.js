@@ -1,0 +1,795 @@
+/* ============================================================
+   WDP 团队工作台 · 对话模块（wb3.js）
+   接 web-ui chat 后端：
+     POST /api/chat/start  → {stream_id}
+     EventSource /api/chat/stream?stream_id=xxx
+       事件: token / reasoning / tool / done / apperror / stream_end
+     会话列表 GET /api/sessions
+     文件上传 POST /api/me/upload（个人工作库）
+   ============================================================ */
+(function(){
+'use strict';
+const W = window.__wb;
+if(!W){ console.error('wb.js 未加载'); return; }
+const {api, h, toast} = W;
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+
+let activeSid = null;
+// R42/R43：流式状态按会话ID存储（对齐官方 INFLIGHT 机制），不再用全局单流
+// STREAMS[sid] = {answer, reasoning, evtSource, busy, toolLog, ccSnapshot}
+let STREAMS = {};
+let pendingFiles = [];   // 已上传到工作库的文件 {name, path}
+
+// 当前活跃会话是否正在流式
+function isCurrentStreaming(){ return !!(activeSid && STREAMS[activeSid] && STREAMS[activeSid].busy); }
+// 是否有任何会话在流式（用于"稍候"提示，不阻塞其它会话）
+function anyStreaming(){ return Object.values(STREAMS).some(s=>s.busy); }
+
+
+// ── 极简 markdown 渲染（够用：粗体/代码/换行/列表）──
+function renderMd(text){
+  let s = h(text);
+  s = s.replace(/```([\s\S]*?)```/g, (m,c)=>`<pre style="background:rgba(0,0,0,.05);padding:10px;border-radius:8px;overflow-x:auto;font-size:12px">${c}</pre>`);
+  s = s.replace(/`([^`]+)`/g, '<code style="background:rgba(0,0,0,.06);padding:1px 5px;border-radius:4px;font-size:12px">$1</code>');
+  s = s.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+  s = s.replace(/^### (.+)$/gm, '<div style="font-weight:700;margin:8px 0 4px">$1</div>');
+  s = s.replace(/^## (.+)$/gm, '<div style="font-weight:700;font-size:15px;margin:10px 0 5px">$1</div>');
+  s = s.replace(/^- (.+)$/gm, '<div style="margin-left:8px">• $1</div>');
+  s = s.replace(/\n/g, '<br>');
+  return s;
+}
+
+// ══════════════════════════════════════════════
+//  初始化
+// ══════════════════════════════════════════════
+window.initChat = function(){
+  const ta = $('#composerInput');
+  const box = $('#composerBox');
+  const sendBtn = $('.chat-composer .send');
+  const attachBtn = $('#attachBtn');
+  // R29：@成员自动提示
+  bindMentionSuggest();
+
+  // 模板 chip
+  $$('.hintbar .chip').forEach(c => c.addEventListener('click', ()=>{
+    if(c.disabled || !ta) return;
+    ta.value = c.getAttribute('data-tpl') || '';
+    ta.focus(); autoGrow(); syncChips();
+  }));
+
+  if(ta){
+    ta.addEventListener('input', ()=>{ autoGrow(); syncChips(); saveDraftInput(); });
+    ta.addEventListener('keydown', (e)=>{
+      if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); doSend(); }
+    });
+  }
+  if(sendBtn) sendBtn.addEventListener('click', doSend);
+  if(attachBtn) attachBtn.addEventListener('click', ()=>{
+    const inp = document.createElement('input');
+    inp.type='file'; inp.multiple=true;
+    inp.onchange = ()=>uploadFiles(inp.files);
+    inp.click();
+  });
+
+  // 拖拽上传
+  const tip = $('#dragTip');
+  ['dragenter','dragover'].forEach(ev => document.addEventListener(ev, e=>{ e.preventDefault(); if(tip) tip.classList.add('show'); }));
+  ['dragleave','drop'].forEach(ev => document.addEventListener(ev, e=>{ e.preventDefault(); if(e.target===tip||ev==='drop'){ if(tip) tip.classList.remove('show'); } }));
+  document.addEventListener('drop', e=>{
+    e.preventDefault(); if(tip) tip.classList.remove('show');
+    if(e.dataTransfer && e.dataTransfer.files.length) uploadFiles(e.dataTransfer.files);
+  });
+};
+
+window.loadChat = async function(){
+  await loadSessions();
+  await loadModelHint();
+  // 若无会话，显示欢迎
+  const tr = $('#transcript');
+  if(tr && !tr.innerHTML.trim()){
+    tr.innerHTML = `<div class="cmsg ai"><div class="cav">AI</div><div class="cb"><div class="cn">你的 agent</div>
+      <div class="cc">你好 ${h(W.USER.username)}！我是你的 WDP 产品团队专属助手。<br>可以让我清洗信号、起草需求/PRD、问 WDP 产品知识，或点下方模板开始。</div></div></div>`;
+  }
+};
+
+// #4：思考态显示净化——推理原文含markdown符号/被截断的半句，直接slice显示像乱码。
+// 取最后一段完整文字，去掉markdown标记与代码符号，限长。
+function thinkingPreview(reasoning){
+  if(!reasoning) return '';
+  let t = reasoning.replace(/```[\s\S]*?```/g, ' ')      // 代码块
+                   .replace(/[#*`>|\[\]{}_~\-]{2,}/g, ' ') // 连续markdown符号
+                   .replace(/[#*`>|]/g, '')
+                   .replace(/\s+/g, ' ').trim();
+  if(t.length > 100){
+    t = t.slice(-100);
+    const cut = t.search(/[，。；！？.,;!?\s]/);   // 从标点/空白后开始，避免半词
+    if(cut > -1 && cut < 40) t = t.slice(cut+1);
+  }
+  return t;
+}
+function thinkingHtml(reasoning){
+  const t = thinkingPreview(reasoning);
+  return '<span style="color:var(--ink-3);font-style:italic">💭 思考中… '+(t?h(t):'')+'</span>';
+}
+
+// 2c修复：切回对话视图时恢复流式状态显示（wb.js show('chat') 调用）
+window.wbChatResume = function(){
+  setComposerBusy();   // 按当前会话是否流式刷新输入框置灰
+  loadChatWorkspaceList();  // #3：个人中心可能刚登记设备/配了工作库，切回时重新拉环境刷新列表
+  const S = activeSid && STREAMS[activeSid];
+  if(S && S.busy){
+    // 当前会话在流式：确认转录区最后有活的渲染节点，没有则补一个并重绑
+    const tr = $('#transcript');
+    const target = S.node;
+    if(!target || !tr || !tr.contains(target)){
+      const aiNode = appendMsg('assistant', '');
+      const cc = aiNode.querySelector('.cc');
+      if(S.answer){ cc.innerHTML = renderMd(S.answer); }
+      else if(S.reasoning){ cc.innerHTML = thinkingHtml(S.reasoning); }
+      else { cc.innerHTML = '<span style="color:var(--ink-3)">思考中…</span>'; }
+      S.node = cc;
+    }
+    scrollBottom();
+  }
+};
+
+function autoGrow(){
+  const ta = $('#composerInput');
+  if(!ta) return;
+  ta.style.height = 'auto';
+  ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
+}
+function syncChips(){
+  const ta = $('#composerInput');
+  const hasText = (ta && ta.value.trim().length>0) || pendingFiles.length>0;
+  $$('.hintbar .chip').forEach(c => c.disabled = hasText);
+}
+
+// ── 会话列表 ──
+// R40 状态模型：activeSid=当前真实会话id；_draftMode=新对话草稿态(未发消息,不落盘)
+let _draftMode = false;
+let _realSessCount = 0;   // 侧栏真实会话数（新建上限判断）
+const _MAX_SESS = 10;     // 对话卡片上限
+
+function draftKey(){ return 'wb_draft_' + (activeSid || (_draftMode ? 'new' : 'welcome')); }
+function saveDraftInput(){
+  const ta = $('#composerInput');
+  if(!ta) return;
+  try{ sessionStorage.setItem(draftKey(), ta.value || ''); }catch(_){}
+}
+function restoreDraftInput(){
+  const ta = $('#composerInput');
+  if(!ta) return;
+  try{ ta.value = sessionStorage.getItem(draftKey()) || ''; }catch(_){ ta.value=''; }
+  autoGrow(); syncChips();
+}
+
+async function loadSessions(){
+  const list = $('#sessList');
+  if(!list) return;
+  try{
+    const d = await api('/api/sessions');
+    const sessions = (d && (d.sessions || d.items)) || [];
+    let html = '';
+    // 草稿态：顶部插入草稿卡（点击可切回）
+    if(_draftMode){
+      html += `<div class="sess draft ${!activeSid?'active':''}" data-sid="__draft__">
+        <div class="st">🆕 新对话</div><div class="sm">发消息后保存</div></div>`;
+    }
+    if(!sessions.length && !_draftMode){
+      html += '<div style="color:var(--ink-3);font-size:12px;padding:12px;text-align:center">还没有对话，点上方 ＋ 开始</div>';
+    }
+    html += sessions.slice(0,30).map(s=>{
+      const sid = s.session_id || s.id;
+      const title = s.title || '未命名对话';
+      const cnt = s.message_count!=null?s.message_count:(s.messageCount||0);
+      return `<div class="sess ${sid===activeSid?'active':''}" data-sid="${h(sid)}">
+        <div class="st">${h(title)}</div><div class="sm">${cnt} 条消息</div>
+        <button class="sess-rename" data-sid="${h(sid)}" data-title="${h(title)}" title="重命名">✏️</button>
+        <button class="sess-del" data-sid="${h(sid)}" data-title="${h(title)}" title="删除对话">🗑</button></div>`;
+    }).join('');
+    list.innerHTML = html;
+    // 记录真实会话数（新建对话上限判断用）
+    _realSessCount = sessions.length;
+    // 卡片点击：切换会话 / 切回草稿
+    list.querySelectorAll('.sess').forEach(el => el.addEventListener('click', ()=>{
+      const sid = el.dataset.sid;
+      if(sid === '__draft__'){ switchToDraft(); return; }
+      switchSession(sid);
+    }));
+    // 重命名（阻止冒泡）
+    list.querySelectorAll('.sess-rename').forEach(b => b.addEventListener('click', async (e)=>{
+      e.stopPropagation();
+      const nt = await wbPrompt('对话名称：', {value: b.dataset.title||''});
+      if(!nt || nt === b.dataset.title) return;
+      try{
+        await api('/api/session/rename', {method:'POST', body:JSON.stringify({session_id:b.dataset.sid, title:nt})});
+        loadSessions(); updateChatTitle(nt);
+      }catch(err){ toast('重命名失败：'+err.message, true); }
+    }));
+    // 删除对话（双源删除：WebUI json + state.db，后端已实现）
+    list.querySelectorAll('.sess-del').forEach(b => b.addEventListener('click', async (e)=>{
+      e.stopPropagation();
+      const delSid = b.dataset.sid, delTitle = b.dataset.title||'该对话';
+      if(!(await wbConfirm(`确定删除对话「${delTitle}」？此操作会从服务器彻底删除，不可恢复。`))) return;
+      try{
+        await api('/api/session/delete', {method:'POST', body:JSON.stringify({session_id:delSid})});
+        // 删的是当前会话 → 回到欢迎态
+        if(delSid === activeSid){ activeSid = null; _draftMode = false;
+          const tr=$('#transcript'); if(tr) tr.innerHTML=''; updateChatTitle(); }
+        toast('已删除对话');
+        loadSessions();
+      }catch(err){ toast('删除失败：'+err.message, true); }
+    }));
+  }catch(e){
+    list.innerHTML = `<div style="color:var(--ink-3);font-size:12px;padding:12px">会话列表加载失败</div>`;
+  }
+  // 新对话按钮
+  const newBtn = $('#viewChat .sess-panel .side-head button');
+  if(newBtn) newBtn.onclick = newSession;
+  // R21：沉淀为信号按钮
+  const tsb = $('#chatToSignalBtn');
+  if(tsb && !tsb._bound){ tsb._bound=1; tsb.onclick = chatToSignal; }
+  // 个人工作库侧栏
+  loadChatWorkspaceList();
+}
+
+// 顶部当前对话标题（可点击改名）
+function updateChatTitle(title){
+  const el = $('#chatTitleLabel');
+  if(!el) return;
+  if(activeSid && title){ el.textContent = title; el.style.display=''; }
+  else if(_draftMode){ el.textContent = '🆕 新对话'; el.style.display=''; }
+  else { el.style.display='none'; }
+}
+
+// R29：@成员自动提示（输入@时弹成员列表，点选补全，不靠手打）
+let _memberList = null;
+async function ensureMembers(){
+  if(_memberList) return _memberList;
+  try{ const d = await api('/api/me/members'); _memberList = (d.members||[]).filter(m=>m.username!==(W.USER&&W.USER.username)); }
+  catch(_){ _memberList = []; }
+  return _memberList;
+}
+function bindMentionSuggest(){
+  const ta = $('#composerInput');
+  const box = $('#composerBox');
+  if(!ta || !box || ta._mentionBound) return;
+  ta._mentionBound = 1;
+  let panel = null;
+  const closePanel = ()=>{ if(panel){ panel.remove(); panel=null; } };
+  ta.addEventListener('input', async ()=>{
+    const v = ta.value;
+    const m = v.match(/^@([\w-]*)$/);   // 只在开头输入@xxx且未打空格时提示
+    if(!m){ closePanel(); return; }
+    const members = await ensureMembers();
+    const kw = m[1].toLowerCase();
+    const hits = members.filter(x=>!kw || x.username.toLowerCase().includes(kw));
+    closePanel();
+    if(!hits.length) return;
+    panel = document.createElement('div');
+    panel.className = 'mention-panel';
+    panel.style.cssText = 'position:absolute;bottom:100%;left:44px;margin-bottom:8px;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);z-index:50;min-width:200px;overflow:hidden';
+    panel.innerHTML = '<div style="padding:7px 12px;font-size:11px;color:var(--ink-3);border-bottom:1px solid var(--line-2)">@ 通知团队成员</div>'
+      + hits.map(x=>`<div class="mention-item" data-u="${h(x.username)}" style="padding:9px 12px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px">
+          <span style="width:24px;height:24px;border-radius:50%;background:var(--brand-soft);color:var(--brand-strong);display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">${h(x.username[0].toUpperCase())}</span>
+          ${h(x.username)}<span style="color:var(--ink-3);font-size:11px">${x.role==='admin'?'管理员':'成员'}</span></div>`).join('');
+    box.style.position = 'relative';
+    box.appendChild(panel);
+    panel.querySelectorAll('.mention-item').forEach(it=>{
+      it.addEventListener('mouseenter', ()=>it.style.background='var(--brand-soft)');
+      it.addEventListener('mouseleave', ()=>it.style.background='');
+      it.addEventListener('click', ()=>{
+        ta.value = '@'+it.dataset.u+' ';
+        closePanel(); ta.focus();
+      });
+    });
+  });
+  ta.addEventListener('blur', ()=>setTimeout(closePanel, 200));
+}
+
+// R21：把对话洞察沉淀为信号 → 提交入库审核
+async function chatToSignal(){
+  // 预填最后一条 AI 回复作为内容参考
+  let lastAnswer = '';
+  const msgs = document.querySelectorAll('#transcript .cmsg.ai .cc');
+  if(msgs.length) lastAnswer = (msgs[msgs.length-1].textContent||'').trim().slice(0,300);
+  const form = await wbForm('沉淀为信号（提交入库审核）', [
+    {key:'title', label:'信号标题', type:'text', required:true, placeholder:'一句话概括这条信号'},
+    {key:'category', label:'类别', type:'select', value:'需求信号', options:['需求信号','问题信号','竞品信号','市场信号']},
+    {key:'urgency', label:'紧急度', type:'select', value:'中', options:['高','中','低']},
+    {key:'content', label:'信号内容', type:'textarea', value:lastAnswer, required:true},
+  ], {icon:'📥', okText:'提交入库'});
+  if(!form) return;
+  const today = new Date().toISOString().slice(0,10);
+  const sid = 'SIG-' + today.replace(/-/g,'') + '-' + String(Math.floor(Math.random()*900)+100);
+  const md = `---\nid: ${sid}\ntype: 信号\ntitle: ${form.title}\ndescription: ${form.title}\ndate: ${today}\nsource: 对话沉淀\ncategory: ${form.category}\nurgency: ${form.urgency}\nconfidence: 中\nstatus: 待triage\n---\n\n## 信号内容\n${form.content}\n`;
+  try{
+    await api('/api/review/submit', {method:'POST', body:JSON.stringify({
+      title: form.title, category: 'signals', content: md,
+      suggestion: {target_category:'signals', summary:form.title}
+    })});
+    if(window.__wb) window.__wb.toast('已提交入库审核，管理员会收到通知');
+  }catch(e){ if(window.__wb) window.__wb.toast('提交失败：'+e.message, true); }
+}
+
+async function loadChatWorkspaceList(){
+  const box = $('#wsList');
+  if(!box) return;
+  box.innerHTML = '<div style="color:var(--ink-3);font-size:12px;padding:8px">加载中…</div>';
+  let env;
+  try{ env = await api('/api/me/environment'); }
+  catch(e){ box.innerHTML = '<div style="color:var(--ink-3);font-size:12px;padding:8px">加载失败</div>'; return; }
+  _wsEnv = env;
+
+  // P2 环境互锁：未登记设备 → 工作库整体置灰（不跳转，就地明示原因），＋号也置灰
+  if(!env.registered){
+    box.innerHTML = `<div style="font-size:12px;padding:10px;color:var(--ink-3);line-height:1.7;opacity:.75">
+      <div style="color:var(--amber,#d97706);font-weight:600;margin-bottom:4px">⚠ 当前环境未登记</div>
+      当前设备与已登记环境不一致或尚未登记，工作库不可用。<br>
+      请先到 <a href="#" id="wsGoRegister" style="color:var(--brand-strong);font-weight:600">个人中心 · 登记当前设备</a>
+    </div>` + renderOtherWs(env);
+    const go = box.querySelector('#wsGoRegister');
+    if(go) go.onclick = (e)=>{ e.preventDefault(); jumpToWorkspaceMgmt(); };
+    setAddWsBtnState(false);
+    return;
+  }
+
+  const wss = env.workspaces || [];
+  const active = env.active_workspace;
+  if(!wss.length){
+    box.innerHTML = `<div style="font-size:12px;padding:10px;color:var(--ink-3);line-height:1.7">
+      当前设备(${h((env.device&&env.device.name)||'本机')})还没配置工作库目录。<br>
+      点上方 ＋ 直接添加工作库。
+    </div>` + renderOtherWs(env);
+    setAddWsBtnState(true);
+    return;
+  }
+
+  // 列出可选工作库，点击设为对话默认
+  box.innerHTML = wss.map(w=>{
+    const on = w.id === active;
+    return `<div class="ws-pick" data-wid="${h(w.id)}" title="${h(w.local_path)}" style="display:flex;align-items:center;gap:8px;padding:8px 10px;font-size:12px;border-radius:9px;cursor:pointer;margin-bottom:4px;border:1px solid ${on?'var(--brand)':'transparent'};background:${on?'var(--brand-soft)':'transparent'}">
+      <span style="flex-shrink:0">${on?'📂':'📁'}</span>
+      <div style="flex:1;min-width:0"><div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h(w.name)}</div>
+      <div style="color:var(--ink-3);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h(w.local_path)}</div></div>
+      ${on?'<span class="tag green" style="font-size:10px;flex-shrink:0">当前</span>':''}
+    </div>`;
+  }).join('') + renderOtherWs(env);
+  box.querySelectorAll('.ws-pick').forEach(el=>el.addEventListener('click', async ()=>{
+    const wid = el.dataset.wid;
+    if(wid === active) return;
+    try{
+      await api('/api/me/workspaces/activate', {method:'POST', body:JSON.stringify({id:wid})});
+      if(window.__wb) window.__wb.toast('已切换对话工作库（新对话生效）');
+      // R30：切换工作库后重置当前会话，下一条消息用新工作库创建session
+      activeSid = null;
+      loadChatWorkspaceList();
+    }catch(e){ if(window.__wb) window.__wb.toast('切换失败：'+e.message, true); }
+  }));
+  setAddWsBtnState(true);
+}
+
+// 非当前环境的工作库：置灰展示（可见不可选，含环境不一致场景）
+function renderOtherWs(env){
+  const others = (env && env.other_workspaces) || [];
+  if(!others.length) return '';
+  return others.map(w=>`
+    <div title="该工作库属于其它设备环境，当前环境不可用" style="display:flex;align-items:center;gap:8px;padding:8px 10px;font-size:12px;border-radius:9px;margin-bottom:4px;opacity:.4;cursor:not-allowed;filter:grayscale(1)">
+      <span style="flex-shrink:0">🔒</span>
+      <div style="flex:1;min-width:0"><div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h(w.name)}</div>
+      <div style="color:var(--ink-3);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h(w.local_path)} · 其它环境</div></div>
+    </div>`).join('');
+}
+
+let _wsEnv = null;
+
+function jumpToWorkspaceMgmt(){
+  const meBtn = document.querySelector('.rail-btn[data-view="me"]');
+  if(meBtn) meBtn.click();
+  setTimeout(()=>{ const w=document.querySelector('[data-me="workspace"]'); if(w) w.click(); }, 150);
+  if(window.__wb) window.__wb.toast('前往个人中心 · 工作库/设备管理');
+}
+
+// ＋号：从个人中心已配置的工作库列表中挑选启用（不在对话里新建路径）；未登记环境时置灰
+function setAddWsBtnState(enabled){
+  const addBtn = $('#viewChat .ws-panel .side-head button');
+  if(!addBtn) return;
+  addBtn.disabled = !enabled;
+  addBtn.style.opacity = enabled ? '' : '.35';
+  addBtn.style.cursor = enabled ? '' : 'not-allowed';
+  addBtn.title = enabled ? '选择工作库（在个人中心配置）' : '当前环境未登记设备，先到个人中心登记';
+  addBtn.onclick = enabled ? pickWorkspaceFromList : ()=>{
+    if(window.__wb) window.__wb.toast('当前环境未登记设备，请先到个人中心登记', true);
+  };
+}
+async function pickWorkspaceFromList(){
+  // 只从个人中心已配置的工作库里选；没配过就引导去个人中心
+  const env = _wsEnv || await api('/api/me/environment').catch(()=>null);
+  const wss = (env && env.workspaces) || [];
+  if(!wss.length){
+    if(await wbConfirm('当前环境还没有配置工作库目录。\n\n工作库在「个人中心 → 个人工作库」配置，现在前往？')){
+      jumpToWorkspaceMgmt();
+    }
+    return;
+  }
+  const active = env.active_workspace;
+  const form = await wbForm('选择对话工作库', [
+    {key:'wid', label:'工作库（个人中心已配置）', type:'select', required:true,
+     value: active || wss[0].id,
+     options: wss.map(w=>({value:w.id, label:`${w.name}（${w.local_path}）`}))}
+  ], {okText:'启用'});
+  if(!form) return;
+  try{
+    await api('/api/me/workspaces/activate', {method:'POST', body:JSON.stringify({id:form.wid})});
+    if(window.__wb) window.__wb.toast('已切换对话工作库（新对话生效）');
+    activeSid = null;
+    loadChatWorkspaceList();
+  }catch(e){ if(window.__wb) window.__wb.toast('切换失败：'+e.message, true); }
+}
+function bindAddWsBtn(){
+  // 初始绑定（loadChatWorkspaceList 会按环境状态重设）
+  setAddWsBtnState(true);
+}
+
+function newSession(){
+  // 对话卡片上限：达到 10 个真实会话时，提示用户让 agent 帮迁移后手动删除，不再新建
+  if(_realSessCount >= _MAX_SESS && !_draftMode){
+    wbAlert(`对话数量已达上限（${_MAX_SESS} 个）。\n\n如需开启新对话，请先让 agent 帮你迁移（沉淀/归档）需要保留的一个或多个对话内容，然后手动删除对应的对话卡片（点卡片上的 🗑），腾出位置后即可新建。`);
+    return;
+  }
+  // R40：进入草稿态（不真建session，发消息时才建）；重复点＋只保持一个草稿
+  saveDraftInput();               // 缓存当前对话未发送的输入
+  activeSid = null;
+  _draftMode = true;
+  const tr = $('#transcript');
+  if(tr) tr.innerHTML = `<div class="cmsg ai"><div class="cav">AI</div><div class="cb"><div class="cn">你的 agent</div><div class="cc">新对话已开始，问我点什么吧。</div></div></div>`;
+  loadSessions();                 // 重绘列表（含草稿卡高亮）
+  updateChatTitle();
+  restoreDraftInput();            // 恢复草稿态的输入缓存
+  setComposerBusy();              // 2b修复：草稿态是新会话，不继承上一会话的流式置灰
+  const inp = $('#composerInput');
+  if(inp) inp.focus();
+}
+
+// R40：从其它会话切回草稿卡
+function switchToDraft(){
+  saveDraftInput();
+  activeSid = null;
+  _draftMode = true;
+  const tr = $('#transcript');
+  if(tr) tr.innerHTML = `<div class="cmsg ai"><div class="cav">AI</div><div class="cb"><div class="cn">你的 agent</div><div class="cc">新对话已开始，问我点什么吧。</div></div></div>`;
+  const list = $('#sessList');
+  if(list){
+    list.querySelectorAll('.sess').forEach(x=>x.classList.toggle('active', x.dataset.sid==='__draft__'));
+  }
+  updateChatTitle();
+  restoreDraftInput();
+  setComposerBusy();              // 2b修复：切回草稿卡同样解除流式置灰
+}
+
+async function switchSession(sid){
+  if(sid === activeSid) return;
+  saveDraftInput();               // R39/R40：切走前缓存当前输入
+  activeSid = sid;
+  // R40：切到真实会话时，若草稿无缓存输入则丢弃草稿卡（无内容即清除）
+  let draftHasInput = false;
+  try{ draftHasInput = !!(sessionStorage.getItem('wb_draft_new')||'').trim(); }catch(_){}
+  if(!draftHasInput) _draftMode = false;
+  const list = $('#sessList');
+  if(list){
+    list.querySelectorAll('.sess').forEach(x=>x.classList.toggle('active', x.dataset.sid===sid));
+    if(!_draftMode){ const dr=list.querySelector('.sess.draft'); if(dr) dr.remove(); }
+  }
+  const tr = $('#transcript');
+  if(tr) tr.innerHTML = '<div style="color:var(--ink-3);text-align:center;padding:20px">加载对话历史…</div>';
+  try{
+    const d = await api('/api/session?session_id='+encodeURIComponent(sid)).catch(()=>null)
+           || await api('/api/sessions/'+encodeURIComponent(sid)).catch(()=>null);
+    const msgs = (d && (d.messages || (d.session && d.session.messages))) || [];
+    if(tr){
+      tr.innerHTML = msgs.map(m => renderMsg(m.role, m.content||m.text||'')).join('')
+        || '<div style="color:var(--ink-3);text-align:center;padding:20px">（空对话）</div>';
+      tr.scrollTop = tr.scrollHeight;
+    }
+    const title = (d && (d.title || (d.session && d.session.title))) || '';
+    updateChatTitle(title || '对话');
+  }catch(e){
+    if(tr) tr.innerHTML = '<div style="color:var(--ink-3);text-align:center;padding:20px">无法加载历史，可继续新对话</div>';
+  }
+  // R43：若切到的会话正在流式（后台累积中），恢复显示其进行中的回复
+  const S = STREAMS[sid];
+  if(S && S.busy){
+    const aiNode = appendMsg('assistant', '');
+    const cc = aiNode.querySelector('.cc');
+    // 把该会话的流式 cc 引用接到新节点，让 refreshIfCurrent 继续写这里
+    // 用当前累积状态先渲染一次
+    if(S.answer){ cc.innerHTML = renderMd(S.answer); }
+    else if(S.reasoning){ cc.innerHTML = thinkingHtml(S.reasoning); }
+    else { cc.innerHTML = '<span style="color:var(--ink-3)">思考中…</span>'; }
+    // 关键：把流的渲染目标切换到新节点（refreshIfCurrent 里 cc 是闭包变量，需在流定义处支持重绑——通过 S.node）
+    S.node = cc;
+    tr.scrollTop = tr.scrollHeight;
+  }
+  restoreDraftInput();            // 恢复该会话的输入缓存
+  setComposerBusy();              // R42：切换后按新会话是否流式刷新置灰态
+}
+
+async function loadModelHint(){
+  const sel = $('#chatModelSelect');
+  const hint = $('#chatModelHint');
+  try{
+    const d = await api('/api/me/agent');
+    // 简化：展示当前 profile 默认模型
+    if(sel){ sel.innerHTML = '<option>团队默认模型</option>'; }
+    if(hint) hint.textContent = '个人渠道可在「个人中心」配置';
+  }catch(_){}
+}
+
+// ── 消息渲染 ──
+function renderMsg(role, content){
+  if(role === 'user'){
+    return `<div class="cmsg me"><div class="cav">${h((W.USER.username||'我')[0])}</div><div class="cb">
+      <div class="cn">我</div><div class="cc">${renderMd(content)}</div></div></div>`;
+  }
+  return `<div class="cmsg ai"><div class="cav">AI</div><div class="cb">
+    <div class="cn">你的 agent</div><div class="cc">${renderMd(content)}</div></div></div>`;
+}
+
+function appendMsg(role, content){
+  const tr = $('#transcript');
+  if(!tr) return null;
+  const div = document.createElement('div');
+  div.innerHTML = renderMsg(role, content);
+  const node = div.firstElementChild;
+  tr.appendChild(node);
+  tr.scrollTop = tr.scrollHeight;
+  return node;
+}
+
+// ══════════════════════════════════════════════
+//  发送 + SSE 流式接收
+// ══════════════════════════════════════════════
+async function doSend(){
+  // R42：只阻塞"当前会话正在流式"的情况；其它会话在思考不影响当前会话输入
+  if(isCurrentStreaming()){ toast('当前对话正在回复中，请稍候'); return; }
+  const ta = $('#composerInput');
+  const msg = (ta.value || '').trim();
+  if(!msg && !pendingFiles.length){ return; }
+
+  // ④ @通知：识别 "@用户名 内容" 或 "@用户名：内容" → 直接发站内通知，不进对话
+  const mMention = msg.match(/^@([\w][\w-]*)\s*[:：]?\s*(.+)$/s);
+  if(mMention){
+    const target = mMention[1], text = mMention[2].trim();
+    if(text){
+      try{
+        await api('/api/me/mention', {method:'POST', body:JSON.stringify({username:target, message:text})});
+        appendMsg('user', msg);
+        const n = appendMsg('assistant', '');
+        n.querySelector('.cc').innerHTML = `✅ 已通知 <b>@${h(target)}</b>（对方铃铛会收到）`;
+        ta.value=''; autoGrow(); syncChips(); saveDraftInput();
+      }catch(e){
+        const n = appendMsg('assistant', '');
+        n.querySelector('.cc').innerHTML = `<span style="color:var(--danger)">@通知失败：${h(e.message)}</span>`;
+      }
+      return;
+    }
+  }
+
+  // 用户气泡（含附件提示）
+  let userText = msg;
+  if(pendingFiles.length){
+    userText += '\n\n[已上传到工作库：' + pendingFiles.map(f=>f.name).join(', ') + ']';
+  }
+  appendMsg('user', userText);
+  ta.value = ''; autoGrow(); syncChips();
+  // R40：真正发出消息 → 草稿态转正（会话将由后端落盘）
+  const wasDraft = _draftMode && !activeSid;
+  _draftMode = false;
+  try{ sessionStorage.removeItem('wb_draft_new'); }catch(_){}
+  saveDraftInput();
+  const filesForThisTurn = pendingFiles.slice();
+  pendingFiles = []; renderPending();
+
+  // R42/R43：流式状态按会话存储。先建 session 拿到真实 sid，再建流式状态（修复新建对话 sid=null 的 bug）。
+  let streamSid, cc, S;
+
+  function renderStreamInto(node){
+    // 把 STREAMS[sid] 当前状态渲染进指定气泡节点（当前活跃会话才调用）
+    if(!node) return;
+    if(S.answer){
+      node.innerHTML = renderMd(S.answer) + (S.toolCount? renderToolPanel(S) : '');
+    } else if(S.reasoning){
+      node.innerHTML = thinkingHtml(S.reasoning);
+    } else {
+      node.innerHTML = '<span style="color:var(--ink-3)">思考中…</span>';
+    }
+  }
+  function renderToolPanel(S){
+    // 简化：工具面板文本（折叠区在 DOM 里重建复杂，这里用计数提示）
+    return '\n\n<div style="font-size:11px;color:var(--ink-3)">⚙️ 已调用 '+S.toolCount+' 个工具</div>';
+  }
+  function refreshIfCurrent(){
+    // 只有当前活跃会话是这条流时才更新 DOM；否则后台累积，切回时由 switchSession 恢复
+    if(activeSid === streamSid){
+      // R43：渲染目标优先用 switchSession 重绑的 S.node（切回后），否则用发起时的 cc
+      const target = S.node || cc;
+      renderStreamInto(target);
+      scrollBottom();
+    }
+  }
+
+  try{
+    // 1. 若无 session，先创建（新建对话场景；已有会话直接复用 activeSid）
+    if(!activeSid){
+      let wsPath = null;
+      try{
+        const env = await api('/api/me/environment');
+        if(env.registered && env.active_workspace){
+          const aw = (env.workspaces||[]).find(w=>w.id===env.active_workspace);
+          if(aw && aw.local_path) wsPath = aw.local_path;
+        }
+      }catch(_){}
+      const s = await api('/api/session/new', {method:'POST', body:JSON.stringify(
+        wsPath ? {profile: W.USER.profile || 'default', workspace: wsPath}
+               : {profile: W.USER.profile || 'default'}
+      )}).catch(err=>{ console.warn('session/new failed', err); return null; });
+      if(s && s.session && s.session.session_id){
+        activeSid = s.session.session_id;
+      }
+    }
+    if(!activeSid){ throw new Error('无法创建会话'); }
+
+    // 2a修复：拿到真实 sid 立即在侧栏插入占位卡片（不等流式结束）。
+    // 否则 agent 工作期间该会话在侧栏无卡片，用户切走就"找不回"这个对话。
+    if(wasDraft){
+      const list0 = $('#sessList');
+      if(list0){
+        const dr = list0.querySelector('.sess.draft'); if(dr) dr.remove();
+        const card = document.createElement('div');
+        card.className = 'sess active';
+        card.dataset.sid = activeSid;
+        card.innerHTML = `<div class="st">${h(msg.slice(0,24)||'新对话')}</div><div class="sm">回复中…</div>`;
+        card.addEventListener('click', ()=>switchSession(card.dataset.sid));
+        list0.querySelectorAll('.sess').forEach(x=>x.classList.remove('active'));
+        list0.prepend(card);
+        _realSessCount++;
+      }
+      updateChatTitle(msg.slice(0,24)||'新对话');
+    }
+
+    // 拿到真实 sid 后，才创建气泡和流式状态
+    streamSid = activeSid;
+    const aiNode = appendMsg('assistant', '');
+    cc = aiNode.querySelector('.cc');
+    cc.innerHTML = '<span style="color:var(--ink-3)">思考中…</span>';
+    S = STREAMS[streamSid] = {
+      answer: '', reasoning: '', busy: true, toolLog: [], toolCount: 0,
+      evtSource: null, finalHtml: null, node: cc
+    };
+    setComposerBusy(true);   // 仅当"当前活跃会话"是这条流时才真正置灰
+    // 2. chat/start
+    const startBody = {
+      session_id: activeSid,
+      message: msg || '（见上传的文件）',
+      profile: W.USER.profile || 'default',
+      workspace: W.WORKSPACE || undefined
+    };
+    const startData = await api('/api/chat/start', {method:'POST', body:JSON.stringify(startBody)});
+    const streamId = startData.stream_id;
+    if(!streamId){ throw new Error('未返回 stream_id'); }
+
+    // 3. SSE —— 事件统一写入 S（按 streamSid），渲染走 refreshIfCurrent
+    const url = new URL('api/chat/stream?stream_id='+encodeURIComponent(streamId), document.baseURI||location.href).href;
+    S.evtSource = new EventSource(url, {withCredentials:true});
+
+    S.evtSource.addEventListener('token', e=>{
+      try{ S.answer += JSON.parse(e.data).text || ''; }catch(_){}
+      refreshIfCurrent();
+    });
+    S.evtSource.addEventListener('reasoning', e=>{
+      try{ S.reasoning += JSON.parse(e.data).text || ''; }catch(_){}
+      refreshIfCurrent();
+    });
+    S.evtSource.addEventListener('tool', e=>{
+      try{
+        const d = JSON.parse(e.data);
+        if(d.name==='clarify') return;
+        S.toolCount++;
+        S.toolLog.push((d.name||'工具') + ' · ' + (d.preview||'调用中'));
+        refreshIfCurrent();
+      }catch(_){}
+    });
+    S.evtSource.addEventListener('done', e=>{
+      try{ const d=JSON.parse(e.data); if(d.answer && !S.answer){ S.answer=d.answer; } }catch(_){}
+      finishStream();
+    });
+    S.evtSource.addEventListener('apperror', e=>{
+      let m=''; try{ m=JSON.parse(e.data).message||''; }catch(_){}
+      S.answer = S.answer || '';
+      S.error = m || '出错了';
+      if(activeSid===streamSid){ const t=S.node||cc; if(t) t.innerHTML = '<span style="color:var(--danger)">出错了：'+h(m||'请重试')+'</span>'; }
+      finishStream();
+    });
+    S.evtSource.addEventListener('stream_end', ()=>finishStream());
+    S.evtSource.onerror = ()=>{ if(S.busy){ finishStream(); } };
+
+  }catch(e){
+    if(activeSid===streamSid && cc){ cc.innerHTML = '<span style="color:var(--danger)">发送失败：'+h(e.message)+'</span>'; }
+    else { toast('发送失败：'+e.message, true); }
+    if(S) S.busy = false;
+    if(streamSid) delete STREAMS[streamSid];
+    setComposerBusy(false);
+  }
+
+  function finishStream(){
+    if(S.evtSource){ try{ S.evtSource.close(); }catch(_){} S.evtSource=null; }
+    S.busy = false;
+    S.finalHtml = S.answer ? renderMd(S.answer) : (S.error ? '<span style="color:var(--danger)">出错了：'+h(S.error)+'</span>' : '<span style="color:var(--ink-3)">（无回复）</span>');
+    // 更新 DOM（若当前还是这条流）
+    if(activeSid===streamSid){
+      const target = S.node || cc;
+      if(!S.answer.trim() && !S.error && target.innerHTML.includes('思考中')){ target.innerHTML = '<span style="color:var(--ink-3)">（无回复）</span>'; }
+      else if(S.answer){ target.innerHTML = S.finalHtml; }
+      setComposerBusy(false);
+    }
+    // 流结束，清掉该会话的流式状态（finalHtml 已由后端落盘，重新拉历史即有）
+    // 保留一小段时间供切回渲染？不需要——switchSession 重新拉历史即可。
+    delete STREAMS[streamSid];
+    // 刷新会话列表（标题可能更新、新对话转正）
+    loadSessions();
+  }
+}
+
+// R39/R42：忙碌态——只当"当前活跃会话正在流式"时置灰该会话输入框；其它会话流式不影响
+function setComposerBusy(_ignored){
+  // 不再用传入的 busy 标志，改为根据当前 activeSid 是否流式动态判定（R42 关键）
+  const busy = isCurrentStreaming();
+  const ta = $('#composerInput');
+  const sendBtn = document.querySelector('.chat-composer .send');
+  const bar = $('#chatBusyBar');
+  if(ta){
+    ta.disabled = !!busy;
+    ta.style.opacity = busy ? '.55' : '';
+    ta.style.cursor = busy ? 'not-allowed' : '';
+    if(busy) ta.placeholder = 'agent 正在思考回复中…';
+    else ta.placeholder = '和你的 agent 对话… 或 @成员名 发快速通知；可拖文件上传';
+  }
+  if(sendBtn){ sendBtn.disabled = !!busy; sendBtn.style.opacity = busy ? '.4' : ''; }
+  if(bar) bar.style.display = busy ? 'flex' : 'none';
+  if(!busy){ const ta2=$('#composerInput'); if(ta2 && document.activeElement!==ta2) { /* 不强制抢焦 */ } }
+}
+
+function scrollBottom(){
+  const tr = $('#transcript');
+  if(tr) tr.scrollTop = tr.scrollHeight;
+}
+
+// ── 文件上传到个人工作库 ──
+async function uploadFiles(fileList){
+  for(const f of fileList){
+    const fd = new FormData();
+    fd.append('file', f, f.name);
+    try{
+      const r = await fetch('/api/me/upload', {method:'POST', credentials:'same-origin',
+        headers: W && window.__CSRF_TOKEN__ ? {'X-CSRF-Token':window.__CSRF_TOKEN__} : {}, body:fd});
+      const d = await r.json();
+      if(r.ok){ pendingFiles.push({name:d.filename||f.name, path:d.path}); toast('已上传 '+(d.filename||f.name)); }
+      else toast('上传失败：'+(d.error||r.status), true);
+    }catch(e){ toast('上传失败：'+e.message, true); }
+  }
+  renderPending();
+  syncChips();
+}
+
+function renderPending(){
+  const box = $('#pendingFiles');
+  if(!box) return;
+  box.innerHTML = pendingFiles.map((f,i)=>`<div class="pf">📎 ${h(f.name)} <span class="x" data-i="${i}">✕</span></div>`).join('');
+  box.querySelectorAll('.pf .x').forEach(x => x.addEventListener('click', ()=>{
+    pendingFiles.splice(+x.dataset.i,1); renderPending(); syncChips();
+  }));
+}
+
+})();

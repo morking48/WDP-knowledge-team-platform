@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hermes — 团队工作台登录</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --brand:#16a34a;--brand-strong:#15803d;--brand-soft:rgba(22,163,74,.12);
+  --ink:#0f1f16;--ink-2:#4b5d52;--line:rgba(22,163,74,.18);
+}
+html,body{height:100%}
+body{
+  color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  display:flex;align-items:center;justify-content:center;
+  background:
+    linear-gradient(rgba(22,163,74,.05) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(22,163,74,.05) 1px,transparent 1px),
+    linear-gradient(160deg,#f4faf6 0%,#eef7f0 50%,#e9f4ec 100%);
+  background-size:28px 28px,28px 28px,100% 100%;
+  min-height:100vh;padding:20px;
+}
+.card{
+  width:100%;max-width:360px;padding:38px 34px 30px;text-align:center;
+  background:rgba(255,255,255,.55);
+  backdrop-filter:blur(24px) saturate(160%);
+  -webkit-backdrop-filter:blur(24px) saturate(160%);
+  border-radius:24px;
+  border:1px solid rgba(255,255,255,.65);
+  box-shadow:
+    0 8px 40px rgba(22,163,74,.10),
+    inset 0 1px 0 rgba(255,255,255,.8),
+    inset 0 -1px 0 rgba(22,163,74,.06);
+}
+.logo{
+  width:56px;height:56px;border-radius:16px;margin:0 auto 14px;
+  display:flex;align-items:center;justify-content:center;
+  font-weight:800;font-size:24px;color:#fff;
+  background:linear-gradient(145deg,#22c55e,#16a34a);
+  box-shadow:0 6px 20px rgba(22,163,74,.32),inset 0 1px 0 rgba(255,255,255,.35);
+}
+h1{font-size:20px;font-weight:700;letter-spacing:.02em}
+.sub{font-size:13px;color:var(--ink-2);margin:6px 0 26px}
+.field{position:relative;margin-bottom:14px;text-align:left}
+.field input{
+  width:100%;padding:12px 15px;border-radius:14px;font-size:14px;color:var(--ink);
+  background:rgba(255,255,255,.7);
+  border:1px solid var(--line);outline:none;
+  transition:border-color .15s,box-shadow .15s,background .15s;
+}
+.field input::placeholder{color:#9ab3a3}
+.field input:focus{
+  border-color:var(--brand);background:#fff;
+  box-shadow:0 0 0 4px var(--brand-soft);
+}
+button[type=submit]{
+  width:100%;padding:12px;margin-top:6px;border:none;border-radius:14px;cursor:pointer;
+  font-size:15px;font-weight:600;color:#fff;letter-spacing:.02em;
+  background:linear-gradient(145deg,#22c55e,#16a34a);
+  box-shadow:0 6px 18px rgba(22,163,74,.3),inset 0 1px 0 rgba(255,255,255,.3);
+  transition:transform .12s,box-shadow .15s,filter .15s;
+}
+button[type=submit]:hover{filter:brightness(1.05);box-shadow:0 8px 24px rgba(22,163,74,.38)}
+button[type=submit]:active{transform:scale(.98)}
+button[type=submit]:disabled{opacity:.6;cursor:not-allowed}
+.err{
+  color:#dc2626;font-size:13px;margin-top:14px;display:none;
+  background:rgba(220,38,38,.08);border:1px solid rgba(220,38,38,.2);
+  padding:8px 12px;border-radius:10px;
+}
+.foot{margin-top:22px;font-size:12px;color:var(--ink-2)}
+</style></head><body>
+<div class="card">
+  <div class="logo">H</div>
+  <h1>Hermes</h1>
+  <p class="sub">WDP 产品团队 AI 工作台</p>
+  <form id="login-form" data-invalid-pw="账号或密码错误" data-conn-failed="连接失败，请稍后再试">
+    <div class="field"><input type="text" id="username" placeholder="账号" autocomplete="username" autofocus></div>
+    <div class="field"><input type="password" id="pw" placeholder="密码" autocomplete="current-password"></div>
+    <button type="submit">登 录</button>
+  </form>
+  <div class="err" id="err"></div>
+  <div class="foot">使用团队管理员分配的账号登录</div>
+</div>
+<script src="static/login-multiuser.js?v=unknown"></script>
+</body></html>

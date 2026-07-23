@@ -1,0 +1,127 @@
+# ==============================================================================
+# WDP 团队 AI 工作台 — 主 Agent Deployment
+# ==============================================================================
+# 作用：
+#   部署独立的主 Agent 后台进程，负责团队级定时任务和自动化工作。
+#
+# 主 Agent 职责：
+#   1. 定时任务执行：如每日知识库整理、周报生成、数据同步等
+#   2. 入库审核执行：自动审核用户提交的知识/技能，符合条件则入库
+#   3. 停滞提醒：检测长时间未活跃的会话/任务，发送提醒通知
+#   4. 团队公共 LLM Key 的使用者，不依赖个人用户的 API Key
+#
+# 设计说明：
+#   - 单副本（replicas=1）：避免定时任务重复执行
+#   - 与 WebUI 共享同一镜像，也可根据需要使用轻量版镜像（见下方注释）
+#   - 挂载同样的 knowledge 和 profiles 共享卷，与 WebUI 数据互通
+#   - 通过 Secret 注入团队公共 LLM Key（OPENROUTER_API_KEY）
+#   - 不暴露端口，纯后台进程
+# ==============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wdp-team-main-agent
+  namespace: wdp-team  # 请根据实际 namespace 调整
+  labels:
+    app: wdp-team-platform
+    component: main-agent
+spec:
+  replicas: 1  # 单副本，避免定时任务重复执行
+  selector:
+    matchLabels:
+      app: wdp-team-platform
+      component: main-agent
+  strategy:
+    type: Recreate  # 单副本用 Recreate 策略，避免新旧 Pod 同时运行
+  template:
+    metadata:
+      labels:
+        app: wdp-team-platform
+        component: main-agent
+    spec:
+      # 安全上下文：使用非 root 用户运行
+      securityContext:
+        runAsUser: 1024
+        runAsGroup: 1024
+        fsGroup: 1024
+      containers:
+        - name: main-agent
+          # 方式一：与 WebUI 使用同一镜像（推荐，减少维护成本）
+          # TODO: 镜像名由 Dockerfile 构建模块确认后替换
+          image: wdp-team-platform:latest
+          imagePullPolicy: IfNotPresent
+          #
+          # 方式二：使用轻量版镜像（可选）
+          # 如果主 Agent 不需要完整的 WebUI 依赖，可构建一个轻量镜像：
+          #   image: wdp-team-platform-agent:latest
+          # 轻量镜像只需包含 agent 运行时和必要工具，体积更小、启动更快。
+          #
+          # 启动命令：以 Gateway 常驻进程运行主 Agent
+          # 说明：Hermes 的 cron 定时任务是挂靠在 gateway 进程上自动触发的
+          #   （"gateway is running — cron jobs will fire automatically"），
+          #   因此主 Agent 用 `hermes gateway run` 常驻即可承载定时任务调度。
+          #   团队级 cron 任务（入库审核执行/停滞提醒/周报等）事先通过
+          #   `hermes cron create` 注册到主 Agent 的 profile 下。
+          command: ["hermes", "gateway", "run"]
+          env:
+            # ---- Hermes Home（主 Agent 专属 profile 目录）----
+            - name: HERMES_HOME
+              value: "/data/profiles/main-agent"
+            # ---- Agent 源码路径（与 Dockerfile 中 /opt/hermes 一致）----
+            - name: HERMES_WEBUI_AGENT_DIR
+              value: "/opt/hermes"
+            # ---- 团队知识库路径 ----
+            - name: HERMES_TEAM_KNOWLEDGE_DIR
+              value: "/data/knowledge"
+            # ---- 团队公共 LLM Key（从 Secret 引用）----
+            # Secret 名称：wdp-team-llm-secret
+            # 注意：此 Secret 不在本文件中创建，需运维提前创建（见 secret.example.yaml）
+            - name: OPENROUTER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: wdp-team-llm-secret
+                  key: OPENROUTER_API_KEY
+            # ---- 可选：其他 LLM 配置 ----
+            - name: HERMES_LLM_PROVIDER
+              value: "openrouter"
+            - name: HERMES_LLM_MODEL
+              value: "moonshotai/kimi-k3"  # 可按需调整
+            # ---- 跳过权限修复（共享卷场景）----
+            - name: HERMES_SKIP_CHMOD
+              value: "1"
+          resources:
+            requests:
+              cpu: "1"       # 主 Agent 资源需求较低，1 核足够
+              memory: "2Gi"  # 2G 内存
+            limits:
+              cpu: "2"       # 上限 2 核
+              memory: "4Gi"  # 上限 4G 内存
+          # ---- 存活探针：检测主 Agent 进程是否正常运行 ----
+          # 主 Agent 不暴露 HTTP 端口，用 exec 探测 gateway 常驻进程
+          livenessProbe:
+            exec:
+              command:
+                - pgrep
+                - -f
+                - "gateway"
+            initialDelaySeconds: 60   # 启动后 60 秒开始探测（Agent 初始化较慢）
+            periodSeconds: 30         # 每 30 秒探测一次
+            timeoutSeconds: 10        # 超时 10 秒
+            failureThreshold: 3       # 连续失败 3 次重启
+          volumeMounts:
+            # 挂载团队知识库共享卷
+            - name: knowledge-volume
+              mountPath: /data/knowledge
+            # 挂载用户目录共享卷（主 Agent 需要读取用户会话状态以发提醒）
+            - name: profiles-volume
+              mountPath: /data/profiles
+      volumes:
+        # 引用 PVC：团队知识库
+        - name: knowledge-volume
+          persistentVolumeClaim:
+            claimName: wdp-team-knowledge
+        # 引用 PVC：用户目录
+        - name: profiles-volume
+          persistentVolumeClaim:
+            claimName: wdp-team-profiles

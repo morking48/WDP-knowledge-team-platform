@@ -1,0 +1,119 @@
+# =============================================================================
+# WDP 团队平台 · Docker 构建忽略清单
+# 构建上下文：项目根目录 F:\wdp-team-hermes
+# 使用方式：docker build -f deploy/wdp-team-platform/Dockerfile -t wdp-team-platform:latest .
+#
+# 注意：此文件只在「构建上下文为 deploy/wdp-team-platform/」时才会被 Docker 自动读取；
+# 当上下文是项目根目录时，需要把本文件放到根目录、或通过 -f 与 --no-cache 不影响 .dockerignore 解析。
+# 推荐做法：将本文件复制（或软链）到项目根目录的 .dockerignore；
+# 这里保留一份供参考与团队同步。
+# =============================================================================
+
+# ------- 版本控制 -------
+.git
+.gitignore
+.gitattributes
+.github
+**/.git
+
+# ------- Hermes 运行时数据（绝不能进镜像）-------
+hermes-home/
+**/hermes-home/
+**/.hermes/
+**/.hermes/**
+knowledge/              # 团队知识库数据卷，运行时挂载
+**/knowledge/
+
+# ------- Web UI 运行时产物 -------
+web-ui/.env
+web-ui/.env.*
+web-ui/venv/
+web-ui/.venv/
+web-ui/__pycache__/
+web-ui/**/__pycache__/
+web-ui/**/*.pyc
+web-ui/**/*.pyo
+web-ui/.pytest_cache/
+web-ui/.mypy_cache/
+web-ui/.ruff_cache/
+web-ui/htmlcov/
+web-ui/.coverage
+web-ui/tests/__pycache__/
+web-ui/api/__pycache__/
+
+# ------- Agent 源码运行时产物 -------
+agent-src/venv/
+agent-src/.venv/
+agent-src/__pycache__/
+agent-src/**/__pycache__/
+agent-src/**/*.pyc
+agent-src/**/*.pyo
+agent-src/*.egg-info/
+agent-src/build/
+agent-src/dist/
+agent-src/.pytest_cache/
+agent-src/.mypy_cache/
+agent-src/.ruff_cache/
+agent-src/node_modules/
+agent-src/ui-tui/node_modules/
+agent-src/ui-tui/dist/
+agent-src/.env
+agent-src/.env.*
+
+# ------- Node / 前端 -------
+node_modules/
+**/node_modules/
+**/package-lock.json
+**/yarn.lock
+**/pnpm-lock.yaml
+
+# ------- 操作系统 / 编辑器 -------
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+*.swn
+.idea/
+.vscode/
+*.iml
+
+# ------- 日志 / 临时 / 缓存 -------
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+*.bak
+*.cache
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# ------- 部署物（避免把 deploy 自身再 COPY 进 web-ui 路径）-------
+deploy/wdp-team-platform/k8s/
+deploy/wdp-team-platform/scripts/
+deploy/wdp-team-platform/team-config/
+deploy/wdp-team-platform/*.md
+deploy/wdp-team-platform/Dockerfile
+deploy/wdp-team-platform/.dockerignore
+
+# ------- 文档（可选，减小镜像体积）-------
+# 如果希望镜像里保留文档，把下面几行注释掉
+docs/
+*.md
+!web-ui/README.md
+!agent-src/README.md
+
+# ------- 其他常见大文件 -------
+**/*.zip
+**/*.tar
+**/*.tar.gz
+**/*.tgz
+**/*.mp4
+**/*.mov
+**/*.avi

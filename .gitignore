@@ -1,0 +1,45 @@
+# ============================================================
+# WDP 团队工作台 · GitHub 备份仓库 .gitignore
+# 目标：备份【平台定制代码(overlay) + 知识库 + 部署包 + 团队skills + 文档】
+#       排除【凭证/密钥/运行态/官方源码副本/依赖】
+# ============================================================
+
+# ==== 全局凭证与密钥（绝不上传公网）====
+*.env
+.env
+auth.json
+*credential*
+*secret*
+!*secret.example*
+*token*
+*.pem
+*.key
+*.pbkdf2_key
+.pbkdf2_key
+git-credentials*
+
+# ==== 官方源码副本（从官方 GitHub 拉，不备份）====
+agent-src/
+
+# ==== web-ui/ 官方 web-ui 完整副本：只留我们的定制，其余是官方源码 ====
+# 我们的定制代码已完整存于 deploy/wdp-team-platform/webui-overlay/，
+# 故 web-ui/ 整个不备份（避免混入 656 个官方测试 + 官方源码）。
+web-ui/
+
+# ==== hermes-home/ 运行态：整体不备份（含密钥/session/个人skills/账号）====
+# 需要备份的团队配置模板已在 deploy/.../team-config/。
+hermes-home/
+
+# ==== 依赖 / 缓存 ====
+node_modules/
+.venv/
+*.venv/
+__pycache__/
+*.pyc
+
+# ==== 监控 / 临时 / 过程归档 ====
+.monitor/
+*.tmp
+*.bak
+*.log
+workbench/archive/

@@ -1,0 +1,33 @@
+# ==============================================================================
+# WDP 团队 AI 工作台 — WebUI Service
+# ==============================================================================
+# 作用：
+#   为 WebUI Deployment 提供集群内稳定的访问入口。
+#   使用 ClusterIP 类型，只在集群内部暴露，外部流量通过 Ingress 进入。
+#
+# 关于 Sticky Session（会话亲和）：
+#   WebUI 是有状态服务（SSE 长连接、会话状态保存在内存中），
+#   因此需要保证同一用户的请求始终落到同一个 Pod 上。
+#   本 Service 本身不实现 sticky session，需要在 Ingress 层配置：
+#     - 按 cookie 名称 hermes_session 或 hermes_profile 做会话亲和
+#     - 具体 annotation 示例见 ingress.yaml
+# ==============================================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: wdp-team-webui
+  namespace: wdp-team  # 请根据实际 namespace 调整
+  labels:
+    app: wdp-team-platform
+    component: webui
+spec:
+  type: ClusterIP  # 仅在集群内部暴露，外部通过 Ingress 访问
+  selector:
+    app: wdp-team-platform
+    component: webui
+  ports:
+    - name: http
+      port: 8787        # Service 端口
+      targetPort: 8787  # 容器端口（与 Deployment 中 containerPort 对应）
+      protocol: TCP

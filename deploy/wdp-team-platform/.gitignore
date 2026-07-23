@@ -1,0 +1,24 @@
+# ── 敏感信息（绝不提交真实密钥）──
+secret.yaml
+*.secret.yaml
+secrets/
+*.key
+*.pem
+
+# ── 临时与缓存 ──
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.swp
+
+# ── 本地测试 ──
+.webui-test/
+test-output/
+
+# ── IDE ──
+.vscode/
+.idea/

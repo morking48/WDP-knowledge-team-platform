@@ -1,0 +1,127 @@
+# ==============================================================================
+# WDP 团队 AI 工作台 — WebUI Deployment
+# ==============================================================================
+# 作用：
+#   部署多用户 WebUI 前端服务，2 副本提供高可用。
+#   每个副本分配 4C8G 资源，通过共享 PVC 访问团队知识库和用户目录。
+#
+# 设计说明：
+#   - replicas=2: 双副本保证可用性，配合 Ingress sticky session 实现会话保持
+#   - resources: requests=2C4G, limits=4C8G，保证调度质量同时防止资源耗尽
+#   - 挂载 knowledge 和 profiles 两个共享卷
+#   - 探针打 /health 端点，确保服务真正可用后再接流量
+#   - imagePullPolicy: IfNotPresent 避免每次重启都拉取镜像（生产建议改 Always）
+# ==============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wdp-team-webui
+  namespace: wdp-team  # 请根据实际 namespace 调整
+  labels:
+    app: wdp-team-platform
+    component: webui
+spec:
+  replicas: 2  # 双副本高可用
+  selector:
+    matchLabels:
+      app: wdp-team-platform
+      component: webui
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1        # 滚动更新时最多多创建 1 个 Pod
+      maxUnavailable: 0  # 滚动更新时保证至少 1 个 Pod 可用（配合 replicas=2）
+  template:
+    metadata:
+      labels:
+        app: wdp-team-platform
+        component: webui
+    spec:
+      # 安全上下文：使用非 root 用户运行（与 Dockerfile 中的 hermeswebui 用户对应）
+      securityContext:
+        runAsUser: 1024
+        runAsGroup: 1024
+        fsGroup: 1024
+      containers:
+        - name: webui
+          # TODO: 镜像名由 Dockerfile 构建模块确认后替换
+          image: wdp-team-platform:latest
+          # IfNotPresent: 优先使用本地已有镜像，避免每次重启都拉取
+          # 生产环境如果镜像 tag 不变，建议改为 Always 确保拿到最新代码
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8787
+              protocol: TCP
+          env:
+            # ---- 基础网络配置 ----
+            - name: HERMES_WEBUI_HOST
+              value: "0.0.0.0"   # 绑定所有接口，K8s Pod 内必须
+            - name: HERMES_WEBUI_PORT
+              value: "8787"
+            # ---- 多用户模式开关 ----
+            - name: HERMES_WEBUI_MULTIUSER
+              value: "1"         # 1 = 开启多用户团队模式
+            # ---- Agent 源码路径 ----
+            # 指向容器内 agent 源码目录，WebUI 会从此目录启动 agent 子进程
+            # 与 Dockerfile 中 COPY agent-src/ → /opt/hermes 保持一致
+            - name: HERMES_WEBUI_AGENT_DIR
+              value: "/opt/hermes"
+            # ---- Hermes Home（当前 profile 状态目录）----
+            # 存放 WebUI 会话、工作区、设置等状态
+            - name: HERMES_HOME
+              value: "/data/profiles/default"
+            # ---- WebUI 状态目录 ----
+            # 默认在 HERMES_HOME/webui 下，显式指定到共享 profiles 卷
+            - name: HERMES_WEBUI_STATE_DIR
+              value: "/data/profiles/default/webui"
+            # ---- 团队知识库路径 ----
+            # WebUI 和 Agent 会读取此目录下的共享知识/技能
+            - name: HERMES_TEAM_KNOWLEDGE_DIR
+              value: "/data/knowledge"
+            # ---- 可选：跳过权限修复（共享卷场景下避免冲突）----
+            - name: HERMES_SKIP_CHMOD
+              value: "1"
+          resources:
+            requests:
+              cpu: "2"       # 请求 2 核，保证调度到有足够资源的节点
+              memory: "4Gi"  # 请求 4G 内存
+            limits:
+              cpu: "4"       # 上限 4 核
+              memory: "8Gi"  # 上限 8G 内存
+          # ---- 存活探针：检测进程是否还活着 ----
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8787
+              scheme: HTTP
+            initialDelaySeconds: 30   # 启动后 30 秒开始探测
+            periodSeconds: 15         # 每 15 秒探测一次
+            timeoutSeconds: 5         # 每次探测超时 5 秒
+            failureThreshold: 3       # 连续失败 3 次则重启容器
+          # ---- 就绪探针：检测是否准备好接流量 ----
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8787
+              scheme: HTTP
+            initialDelaySeconds: 10   # 启动后 10 秒开始探测
+            periodSeconds: 10         # 每 10 秒探测一次
+            timeoutSeconds: 5         # 每次探测超时 5 秒
+            failureThreshold: 3       # 连续失败 3 次则从 Service 摘除
+          volumeMounts:
+            # 挂载团队知识库共享卷
+            - name: knowledge-volume
+              mountPath: /data/knowledge
+            # 挂载用户目录共享卷
+            - name: profiles-volume
+              mountPath: /data/profiles
+      volumes:
+        # 引用 PVC：团队知识库
+        - name: knowledge-volume
+          persistentVolumeClaim:
+            claimName: wdp-team-knowledge
+        # 引用 PVC：用户目录
+        - name: profiles-volume
+          persistentVolumeClaim:
+            claimName: wdp-team-profiles

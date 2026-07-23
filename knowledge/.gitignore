@@ -1,0 +1,19 @@
+# 团队知识库 — 忽略敏感文件
+git-credentials.env
+*.env
+.env
+auth.json
+*credentials*
+*secret*
+*token*
+*.pem
+*.key
+.DS_Store
+*.tmp
+__pycache__/
+*.pyc
+team-tasks.json
+# 定时任务运行产物（非源数据，运行时生成）
+tracking/*-latest.json
+tracking/*-candidates.json
+tracking/weekly-*.md

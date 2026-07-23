@@ -1,0 +1,71 @@
+# ============================================================
+# WDP 团队知识库 · 分区注册表（单一配置源）
+# ============================================================
+# 长线设计：所有"哪些目录是知识分区、各自什么性质、用什么模板"都在这里声明。
+# 后端 api/knowledge.py 读本文件而非硬编码，以后加/改分区只改这一处。
+#
+# 两大区：
+#   working  = 工作文件区（产研流转中的活文件，频繁增改）
+#   library  = 母版知识库（相对稳定的沉淀：在线知识合集 + 历史归档）
+#
+# 校验（enforce_template）：入库时是否强制按模板 frontmatter 必填字段校验。
+#   true  = 硬拦截：缺必填字段则拒绝提交/入库（signals/requirements/designs）
+#   false = 软提示：缺字段仍可入库，返回 warning（decisions 等）
+#   规则来自各分区 required_fields（单一数据源）。
+# ============================================================
+
+# OKF 兼容（2026-07-23）：各分区 frontmatter 含 type（概念类型）+ description（一句话摘要），
+# 与 Google OKF (Open Knowledge Format) v0.1 规范对齐；description 同时供 index.md 索引生成。
+
+version: 1
+
+# ── 工作文件区：产研四层闭环 + 决策/跟踪 ──
+working:
+  signals:
+    title: 信号
+    dir: signals
+    template: signals/_template.md
+    id_prefix: SIG
+    enforce_template: true         # 硬校验：信号是产研起点，字段必须齐
+    required_fields: [id, type, date, source, title, description, category, urgency, confidence, status]
+  requirements:
+    title: 需求
+    dir: requirements
+    template: requirements/_template.md
+    id_prefix: REQ
+    enforce_template: true         # 硬校验：需求要可追溯、可分配
+    required_fields: [id, type, date, title, description, status, priority, owner]
+  designs:
+    title: 产品设计
+    dir: designs
+    template: designs/_template.md
+    id_prefix: DSN
+    enforce_template: true         # 硬校验：设计要能被 agent 执行
+    required_fields: [id, type, date, title, description, requirement_id, status]
+  decisions:
+    title: 决策记录
+    dir: decisions
+    template: decisions/_template.md
+    id_prefix: DEC
+    enforce_template: false        # 软提示：决策格式相对灵活
+    required_fields: [id, type, date, title, description, status]
+  tracking:
+    title: 节点跟踪
+    dir: tracking
+    template: null                  # 自由组织，无模板
+    enforce_template: false
+    required_fields: []
+
+# ── 母版知识库：相对稳定的沉淀 ──
+library:
+  product-knowledge:
+    title: 在线知识合集（母版）
+    dir: library/product-knowledge
+    kind: reference                 # 参考资料型（在线源路由 skill），非流转工作文件
+    note: WDP 产品知识索引 + 在线源同步脚本 + 5类业务场景 prompt 模板
+  archive:
+    title: 历史归档
+    dir: library/archive
+    kind: archive                   # 完成产品设计后归档的历史资料
+    note: 已上线/已交付项目的设计稿、复盘、资料沉淀；从 working/ 完成后归档进来
+

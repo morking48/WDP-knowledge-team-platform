@@ -1,0 +1,1002 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WDP 团队工作台 — 界面原型</title>
+<style>
+:root{
+  --brand:#16a34a; --brand-strong:#15803d; --brand-soft:rgba(22,163,74,.10);
+  --ink:#0f1f16; --ink-2:#4b5d52; --ink-3:#8aa393;
+  --line:rgba(22,163,74,.16); --line-2:rgba(22,163,74,.10);
+  --glass:rgba(255,255,255,.6); --glass-strong:rgba(255,255,255,.78);
+  --danger:#dc2626; --amber:#d97706; --blue:#2563eb; --purple:#7c3aed;
+  --shadow:0 4px 24px rgba(22,163,74,.08), inset 0 1px 0 rgba(255,255,255,.7);
+  --radius:18px; --radius-sm:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  font-size:14px;
+  background:
+    linear-gradient(rgba(22,163,74,.045) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(22,163,74,.045) 1px,transparent 1px),
+    linear-gradient(160deg,#f4faf6 0%,#eef7f0 55%,#e9f4ec 100%);
+  background-size:28px 28px,28px 28px,100% 100%;
+  height:100vh;overflow:hidden;display:flex;
+}
+button{font-family:inherit;cursor:pointer}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-thumb{background:rgba(22,163,74,.2);border-radius:8px}
+::-webkit-scrollbar-track{background:transparent}
+
+/* ── 左侧导航 ─────────────────────── */
+.rail{
+  width:168px;flex-shrink:0;display:flex;flex-direction:column;
+  padding:18px 12px;gap:3px;height:100vh;
+  background:var(--glass);backdrop-filter:blur(20px) saturate(160%);
+  border-right:1px solid var(--line-2);
+}
+.rail .brand{display:flex;align-items:center;gap:10px;padding:4px 8px 18px;border-bottom:1px solid var(--line-2);margin-bottom:12px}
+.rail .logo{width:34px;height:34px;border-radius:10px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+  font-weight:800;font-size:16px;color:#fff;background:linear-gradient(145deg,#22c55e,#16a34a);
+  box-shadow:0 4px 14px rgba(22,163,74,.3),inset 0 1px 0 rgba(255,255,255,.35)}
+.rail .brand .bt{font-size:14px;font-weight:700;line-height:1.2}
+.rail .brand .bs{font-size:10px;color:var(--ink-3)}
+.nav-label{font-size:10px;color:var(--ink-3);padding:8px 10px 5px;letter-spacing:.06em}
+.rail-btn{display:flex;align-items:center;gap:10px;width:100%;padding:10px;border:none;border-radius:11px;
+  background:transparent;color:var(--ink-2);font-size:13px;font-weight:500;transition:all .15s;position:relative;text-align:left;cursor:pointer}
+.rail-btn svg{width:18px;height:18px;flex-shrink:0}
+.rail-btn:hover{background:var(--brand-soft);color:var(--brand-strong)}
+.rail-btn.active{background:var(--brand-soft);color:var(--brand-strong);box-shadow:inset 0 0 0 1.5px var(--brand)}
+.rail-btn .cnt{margin-left:auto;font-size:10px;background:var(--brand-soft);color:var(--brand-strong);padding:2px 7px;border-radius:9px;font-weight:600}
+.rail-btn.active .cnt{background:var(--brand);color:#fff}
+.rail-btn .dot{position:absolute;top:8px;right:8px;width:7px;height:7px;border-radius:50%;background:var(--danger);border:1.5px solid #fff}
+.rail .spacer{flex:1}
+.rail-btn.settings-btn{border:1px solid var(--line);background:rgba(255,255,255,.55);justify-content:center;font-weight:600}
+.rail-btn.settings-btn:hover{border-color:var(--brand);background:var(--brand-soft);box-shadow:0 2px 8px rgba(22,163,74,.12)}
+.rail-btn.settings-btn:active{transform:scale(.97)}
+.rail .user-card{display:flex;align-items:center;gap:10px;padding:10px;margin-top:10px;border-top:1px solid var(--line-2);cursor:default;user-select:none}
+.rail .user-card .avatar{width:32px;height:32px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+  font-size:12px;font-weight:700;color:#fff;background:linear-gradient(145deg,#34d399,#059669)}
+.rail .user-card .un{font-size:13px;font-weight:600}
+.rail .user-card .ur{font-size:10px;color:var(--ink-3);margin-top:1px;display:block}
+
+/* ── 主区 ─────────────────────────── */
+.main{flex:1;display:flex;flex-direction:column;min-width:0;height:100vh}
+.topbar{height:64px;flex-shrink:0;display:flex;align-items:center;gap:16px;padding:0 28px;
+  background:var(--glass);backdrop-filter:blur(20px) saturate(160%);border-bottom:1px solid var(--line-2)}
+.topbar h1{font-size:17px;font-weight:700}
+.topbar .crumb{font-size:12px;color:var(--ink-3)}
+.topbar .right{margin-left:auto;display:flex;align-items:center;gap:12px}
+.search{display:flex;align-items:center;gap:8px;padding:9px 15px;border-radius:12px;background:rgba(255,255,255,.7);border:1px solid var(--line);min-width:240px}
+.search input{border:none;outline:none;background:transparent;font-size:13px;flex:1;color:var(--ink)}
+.search input::placeholder{color:var(--ink-3)}
+.content{flex:1;overflow-y:auto;padding:26px}
+
+/* ── 通用面板/卡片 ─────────────────────── */
+.panel{background:var(--glass-strong);backdrop-filter:blur(20px) saturate(160%);border:1px solid rgba(255,255,255,.65);border-radius:var(--radius);box-shadow:var(--shadow)}
+.panel-head{display:flex;align-items:center;gap:12px;padding:18px 22px;border-bottom:1px solid var(--line-2)}
+.panel-head h2{font-size:15px;font-weight:700}
+.panel-head .hint{font-size:12px;color:var(--ink-3)}
+.panel-body{padding:20px 22px}
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:22px}
+.stat{padding:20px 22px;border-radius:var(--radius);background:var(--glass-strong);border:1px solid rgba(255,255,255,.65);box-shadow:var(--shadow);backdrop-filter:blur(16px)}
+.stat .num{font-size:30px;font-weight:800;color:var(--brand-strong);letter-spacing:-.02em}
+.stat .lbl{font-size:12px;color:var(--ink-2);margin-top:5px}
+.stat .trend{font-size:11px;margin-top:7px}
+.stat .trend.up{color:var(--brand-strong)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:12px 14px;font-size:12px;font-weight:600;color:var(--ink-2);border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:14px;border-bottom:1px solid var(--line-2);vertical-align:middle}
+tbody tr{transition:background .12s}
+.tag{display:inline-flex;align-items:center;padding:3px 11px;border-radius:11px;font-size:11px;font-weight:600;white-space:nowrap}
+.tag.green{background:var(--brand-soft);color:var(--brand-strong)}
+.tag.amber{background:rgba(217,119,6,.12);color:var(--amber)}
+.tag.red{background:rgba(220,38,38,.12);color:var(--danger)}
+.tag.blue{background:rgba(37,99,235,.12);color:var(--blue)}
+.tag.purple{background:rgba(124,58,237,.12);color:var(--purple)}
+.tag.gray{background:rgba(75,93,82,.1);color:var(--ink-2)}
+.btn{padding:8px 16px;border-radius:12px;font-size:12px;font-weight:600;border:1px solid var(--line);background:rgba(255,255,255,.7);color:var(--ink-2);transition:all .15s}
+.btn:hover{border-color:var(--brand);color:var(--brand-strong);background:var(--brand-soft)}
+.btn.primary{background:linear-gradient(145deg,#22c55e,#16a34a);color:#fff;border-color:transparent}
+.btn.primary:hover{filter:brightness(1.05);color:#fff}
+.btn.sm{padding:5px 12px;font-size:11px}
+.btn.ghost{border-color:transparent;background:transparent;padding:5px 9px}
+.tabs{display:flex;gap:10px;margin-bottom:24px}
+.tab{padding:11px 22px;border-radius:14px;border:1px solid var(--line);font-size:14px;font-weight:600;background:var(--glass);color:var(--ink-2);backdrop-filter:blur(12px);transition:all .15s;display:flex;align-items:center;gap:9px}
+.tab:hover{color:var(--brand-strong);border-color:var(--brand)}
+.tab.active{background:linear-gradient(145deg,#22c55e,#16a34a);color:#fff;border-color:transparent;box-shadow:0 4px 14px rgba(22,163,74,.3)}
+.tab .badge{font-size:11px;padding:2px 9px;border-radius:10px;background:rgba(255,255,255,.3);font-weight:600}
+.tab:not(.active) .badge{background:var(--brand-soft);color:var(--brand-strong)}
+.board{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px}
+.lane{background:rgba(255,255,255,.45);border:1px solid var(--line-2);border-radius:var(--radius);padding:14px;min-height:220px;backdrop-filter:blur(12px)}
+.lane-head{display:flex;align-items:center;gap:8px;margin-bottom:12px;padding:0 4px}
+.lane-head .t{font-size:13px;font-weight:700}
+.lane-head .cnt{font-size:11px;color:var(--ink-3);background:rgba(255,255,255,.8);padding:2px 9px;border-radius:10px}
+.lane .bar{height:3px;border-radius:3px;margin-bottom:14px}
+.card-item{background:var(--glass-strong);border:1px solid rgba(255,255,255,.7);border-radius:var(--radius-sm);padding:14px;margin-bottom:11px;box-shadow:0 2px 8px rgba(22,163,74,.06);cursor:pointer;transition:all .15s}
+.card-item:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(22,163,74,.12);border-color:var(--brand)}
+.card-item .tt{font-size:13px;font-weight:600;margin-bottom:10px;line-height:1.45}
+.card-item .meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.card-item .owner{margin-left:auto;font-size:11px;color:var(--ink-2);display:flex;align-items:center;gap:5px}
+.oa{width:19px;height:19px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;background:linear-gradient(145deg,#34d399,#059669);flex-shrink:0}
+.card-item .detail{display:none;margin-top:11px;padding-top:11px;border-top:1px dashed var(--line);font-size:12px;line-height:1.65}
+.card-item.expanded .detail{display:block}
+.card-item .detail .row{display:flex;gap:8px;margin-bottom:6px}
+.card-item .detail .row .k{color:var(--ink-3);flex-shrink:0}
+.card-item .expand-hint{font-size:10px;color:var(--ink-3);margin-top:6px;text-align:right}
+.card-item.expanded .expand-hint{color:var(--brand-strong)}
+
+/* 可展开表格行 */
+tr.exp-row{cursor:pointer}
+tr.exp-row:hover{background:var(--brand-soft)}
+tr.exp-row .caret{display:inline-block;margin-right:6px;transition:transform .18s;color:var(--ink-3);font-size:10px}
+tr.exp-row.open .caret{transform:rotate(90deg);color:var(--brand-strong)}
+tr.exp-detail{display:none}
+tr.exp-detail.show{display:table-row}
+tr.exp-detail>td{padding:0;border-bottom:1px solid var(--line-2);background:rgba(255,255,255,.5)}
+.detail-box{padding:18px 22px 20px 40px}
+.detail-box .sec{margin-bottom:16px}
+.detail-box .sec:last-child{margin-bottom:0}
+.detail-box .sec-t{font-size:12px;font-weight:700;color:var(--brand-strong);margin-bottom:8px}
+.detail-box .sec-b{font-size:13px;line-height:1.7;color:var(--ink)}
+.detail-box .kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px 24px;font-size:13px}
+.detail-box .kv .k{color:var(--ink-3);font-size:12px}
+.detail-box .kv .v{font-weight:600;margin-top:2px}
+.detail-box .raw{background:rgba(255,255,255,.7);border:1px solid var(--line-2);border-radius:10px;padding:12px 14px;font-size:12px;line-height:1.65;color:var(--ink-2);font-style:italic}
+.detail-actions{display:flex;gap:9px;margin-top:16px;padding-top:14px;border-top:1px dashed var(--line)}
+
+/* ── Chat 主界面 ─────────────────────── */
+.chat-wrap{display:flex;gap:16px;height:calc(100vh - 64px - 52px)}
+.chat-side{width:250px;flex-shrink:0;display:flex;flex-direction:column;gap:12px;min-height:0}
+.chat-side .panel{display:flex;flex-direction:column;overflow:hidden}
+.chat-side .sess-panel{flex:1}
+.side-head{padding:13px 16px;border-bottom:1px solid var(--line-2);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.side-head h3{font-size:13px;font-weight:700}
+.side-head button{border:none;background:var(--brand-soft);color:var(--brand-strong);width:22px;height:22px;border-radius:7px;font-size:15px;line-height:1;cursor:pointer}
+.sess-list{flex:1;overflow-y:auto;padding:8px}
+.sess{padding:11px 12px;border-radius:11px;cursor:pointer;transition:all .13s;margin-bottom:4px}
+.sess:hover{background:var(--brand-soft)}
+.sess.active{background:var(--brand-soft);box-shadow:inset 0 0 0 1.5px var(--brand)}
+.sess .st{font-size:13px;font-weight:600;margin-bottom:3px;line-height:1.35}
+.sess .sm{font-size:11px;color:var(--ink-3)}
+/* 个人工作库（chat 侧栏） */
+.ws-panel{max-height:230px}
+.ws-list{overflow-y:auto;padding:8px}
+.ws-item{display:flex;align-items:center;gap:8px;padding:9px 11px;border-radius:10px;cursor:pointer;transition:all .13s;margin-bottom:3px}
+.ws-item:hover{background:var(--brand-soft)}
+.ws-item.active{background:var(--brand-soft);box-shadow:inset 0 0 0 1.5px var(--brand)}
+.ws-item .wi{font-size:14px}
+.ws-item .wt{font-size:12px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ws-item .wn{font-size:10px;color:var(--ink-3)}
+.chat-main{flex:1;min-width:0;display:flex;flex-direction:column}
+.chat-transcript{flex:1;overflow-y:auto;padding:22px 26px;display:flex;flex-direction:column;gap:18px}
+.cmsg{display:flex;gap:12px;max-width:82%}
+.cmsg .cav{width:34px;height:34px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff}
+.cmsg.ai .cav{background:linear-gradient(145deg,#22c55e,#16a34a)}
+.cmsg.me{align-self:flex-end;flex-direction:row-reverse}
+.cmsg.me .cav{background:linear-gradient(145deg,#34d399,#059669)}
+.cmsg .cb{min-width:0}
+.cmsg .cn{font-size:11px;color:var(--ink-3);margin-bottom:5px}
+.cmsg.me .cn{text-align:right}
+.cmsg .cc{padding:12px 16px;border-radius:16px;font-size:14px;line-height:1.65;background:var(--glass-strong);border:1px solid rgba(255,255,255,.7);box-shadow:0 2px 8px rgba(22,163,74,.06);border-top-left-radius:5px}
+.cmsg.me .cc{background:linear-gradient(145deg,#22c55e,#16a34a);color:#fff;border:none;border-top-left-radius:16px;border-top-right-radius:5px}
+.cmsg .cc b{font-weight:700}
+.tool-card{margin-top:10px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:rgba(255,255,255,.6)}
+.tool-card .th{display:flex;align-items:center;gap:8px;padding:9px 13px;background:var(--brand-soft);font-size:12px;font-weight:600;color:var(--brand-strong)}
+.tool-card .tb{padding:12px 14px;font-size:13px;line-height:1.6}
+/* 上传附件卡片 */
+.attach-card{display:flex;align-items:center;gap:10px;padding:10px 13px;border-radius:12px;background:rgba(255,255,255,.7);border:1px solid var(--line);margin-top:8px;font-size:12px}
+.attach-card .ai{font-size:18px}
+.attach-card .an{font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.attach-card .as{color:var(--ink-3)}
+.chat-composer{flex-shrink:0;padding:14px 20px 16px;border-top:1px solid var(--line-2);background:var(--glass);backdrop-filter:blur(16px)}
+.chat-composer .box{display:flex;align-items:flex-end;gap:10px;padding:10px 12px;border-radius:16px;background:rgba(255,255,255,.85);border:1px solid var(--line);box-shadow:var(--shadow)}
+.chat-composer .box.drag{border-color:var(--brand);background:var(--brand-soft);box-shadow:0 0 0 3px var(--brand-soft)}
+.attach-btn{width:34px;height:34px;border:none;border-radius:10px;flex-shrink:0;cursor:pointer;background:transparent;color:var(--ink-2);display:flex;align-items:center;justify-content:center;transition:all .13s;font-size:17px}
+.attach-btn:hover{background:var(--brand-soft);color:var(--brand-strong)}
+.chat-composer textarea{flex:1;border:none;outline:none;resize:none;background:transparent;font-size:14px;line-height:1.5;font-family:inherit;max-height:120px;color:var(--ink)}
+.chat-composer textarea::placeholder{color:var(--ink-3)}
+.chat-composer .send{width:38px;height:38px;border:none;border-radius:12px;flex-shrink:0;cursor:pointer;background:linear-gradient(145deg,#22c55e,#16a34a);color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(22,163,74,.3);transition:all .15s}
+.chat-composer .send:hover{filter:brightness(1.08)}
+.chat-composer .send:active{transform:scale(.94)}
+.pending-files{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:9px}
+.pf{display:flex;align-items:center;gap:7px;padding:6px 11px;border-radius:11px;background:var(--brand-soft);border:1px solid var(--line);font-size:12px}
+.pf .x{cursor:pointer;color:var(--ink-3);font-weight:700;margin-left:2px}
+.pf .x:hover{color:var(--danger)}
+.hintbar{display:flex;gap:8px;margin-top:9px;flex-wrap:wrap}
+.chip{font-size:11px;padding:5px 12px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.6);color:var(--ink-2);cursor:pointer;transition:all .13s}
+.chip:hover:not(:disabled){border-color:var(--brand);color:var(--brand-strong);background:var(--brand-soft)}
+.chip:disabled{opacity:.4;cursor:not-allowed;border-color:var(--line-2);color:var(--ink-3);background:rgba(255,255,255,.35)}
+.drag-tip{position:fixed;inset:0;z-index:200;display:none;align-items:center;justify-content:center;background:rgba(22,163,74,.12);backdrop-filter:blur(4px)}
+.drag-tip.show{display:flex}
+.drag-tip .inner{padding:40px 60px;border-radius:24px;border:2px dashed var(--brand);background:rgba(255,255,255,.9);font-size:18px;font-weight:700;color:var(--brand-strong)}
+
+/* ── 个人中心 ─────────────────────── */
+.me-grid{display:grid;grid-template-columns:220px 1fr;gap:20px;height:calc(100vh - 64px - 52px)}
+.me-nav{display:flex;flex-direction:column;gap:4px}
+.me-nav button{display:flex;align-items:center;gap:10px;padding:11px 14px;border:none;border-radius:11px;background:transparent;color:var(--ink-2);font-size:13px;font-weight:500;text-align:left;cursor:pointer;transition:all .13s}
+.me-nav button:hover{background:var(--brand-soft);color:var(--brand-strong)}
+.me-nav button.active{background:var(--brand-soft);color:var(--brand-strong);box-shadow:inset 0 0 0 1.5px var(--brand)}
+.me-nav button .ic{width:18px;text-align:center}
+.me-content{min-width:0;overflow-y:auto}
+.form-row{display:grid;grid-template-columns:130px 1fr;gap:14px;align-items:start;margin-bottom:18px}
+.form-row .fl{font-size:13px;font-weight:600;padding-top:9px;color:var(--ink)}
+.form-row .fl .fs{display:block;font-size:11px;color:var(--ink-3);font-weight:400;margin-top:3px;line-height:1.4}
+.form-row .fc input[type=text],.form-row .fc input[type=password],.form-row .fc select,.form-row .fc textarea{
+  width:100%;padding:9px 13px;border-radius:11px;border:1px solid var(--line);font-size:13px;font-family:inherit;outline:none;background:rgba(255,255,255,.8);color:var(--ink)}
+.form-row .fc input:focus,.form-row .fc select:focus,.form-row .fc textarea:focus{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft);background:#fff}
+.form-row .fc textarea{resize:vertical;min-height:90px;line-height:1.6}
+.seg{display:flex;gap:6px;flex-wrap:wrap}
+.seg button{padding:7px 14px;border-radius:11px;border:1px solid var(--line);background:rgba(255,255,255,.6);font-size:12px;font-weight:600;color:var(--ink-2);cursor:pointer}
+.seg button.on{background:var(--brand);color:#fff;border-color:transparent}
+.kv-line{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-3);margin-top:6px}
+.toggle{position:relative;width:40px;height:22px;border-radius:20px;border:none;background:#cbd5d1;cursor:pointer;transition:all .15s;flex-shrink:0}
+.toggle.on{background:var(--brand)}
+.toggle::after{content:'';position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:all .15s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.toggle.on::after{left:20px}
+.mem-item{display:flex;gap:10px;padding:12px 14px;border-radius:11px;background:rgba(255,255,255,.6);border:1px solid var(--line-2);margin-bottom:9px;font-size:13px;line-height:1.6}
+.mem-item .mt{flex:1}
+.mem-item .md{font-size:11px;color:var(--ink-3);margin-top:4px}
+.mem-item .ma{display:flex;gap:6px;align-items:flex-start}
+.mem-item .ma button{border:none;background:transparent;color:var(--ink-3);cursor:pointer;font-size:13px;padding:2px 6px;border-radius:6px}
+.mem-item .ma button:hover{background:var(--brand-soft);color:var(--brand-strong)}
+.log-box{background:#0d1a12;border-radius:12px;padding:16px 18px;font-family:ui-monospace,Consolas,monospace;font-size:12px;line-height:1.7;color:#b8e6c8;height:340px;overflow-y:auto}
+.log-box .lt{color:#5a8a6a}
+.log-box .lw{color:#f0b429}
+.log-box .le{color:#f0716f}
+.log-box .li{color:#7cc793}
+.log-bar{display:flex;gap:9px;margin-bottom:12px;align-items:center}
+.log-bar select,.log-bar input{padding:7px 12px;border-radius:10px;border:1px solid var(--line);font-size:12px;background:rgba(255,255,255,.8);outline:none}
+.sub-tab{display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--line-2);padding-bottom:0}
+.sub-tab button{padding:9px 16px;border:none;background:transparent;font-size:13px;font-weight:600;color:var(--ink-2);border-bottom:2px solid transparent;margin-bottom:-1px;cursor:pointer}
+.sub-tab button.active{color:var(--brand-strong);border-bottom-color:var(--brand)}
+
+/* 模型渠道卡片 */
+.channel{border:1px solid var(--line);border-radius:14px;margin-bottom:14px;background:rgba(255,255,255,.6);overflow:hidden}
+.channel.on{border-color:var(--brand);box-shadow:0 0 0 1px var(--brand-soft),0 4px 14px rgba(22,163,74,.08)}
+.ch-head{display:flex;align-items:center;gap:12px;padding:14px 18px;cursor:pointer;user-select:none}
+.ch-head .ci{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;background:var(--brand-soft)}
+.ch-head .ct{flex:1;min-width:0}
+.ch-head .ct .cn{font-size:14px;font-weight:700}
+.ch-head .ct .cs{font-size:11px;color:var(--ink-3);margin-top:2px}
+.ch-head .cstat{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600}
+.ch-head .cstat.ok{color:var(--brand-strong)}
+.ch-head .cstat.fail{color:var(--danger)}
+.ch-head .cstat.idle{color:var(--ink-3)}
+.ch-head .caret{color:var(--ink-3);transition:transform .18s;font-size:12px}
+.channel.expanded .ch-head .caret{transform:rotate(90deg)}
+.ch-body{display:none;padding:0 18px 16px;border-top:1px dashed var(--line)}
+.channel.expanded .ch-body{display:block}
+.ch-row{display:grid;grid-template-columns:88px 1fr;gap:12px;align-items:center;margin-top:14px}
+.ch-row .k{font-size:12px;font-weight:600;color:var(--ink-2)}
+.ch-row input[type=text],.ch-row input[type=password],.ch-row select{width:100%;padding:8px 12px;border-radius:10px;border:1px solid var(--line);font-size:13px;outline:none;background:rgba(255,255,255,.85);color:var(--ink)}
+.ch-row input:focus,.ch-row select:focus{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft);background:#fff}
+.ch-actions{display:flex;gap:9px;margin-top:16px;align-items:center}
+.ch-actions .result{font-size:12px;font-weight:600;margin-left:auto}
+.ch-actions .result.ok{color:var(--brand-strong)}
+.ch-actions .result.fail{color:var(--danger)}
+.ch-actions .result.testing{color:var(--amber)}
+.model-picker{display:flex;align-items:center;gap:8px}
+.model-picker .lbl{font-size:11px;color:var(--ink-3);white-space:nowrap}
+.model-picker select{padding:7px 11px;border-radius:11px;border:1px solid var(--line);font-size:12px;background:rgba(255,255,255,.8);color:var(--ink);outline:none;cursor:pointer;max-width:230px}
+.model-picker select:focus{border-color:var(--brand)}
+
+/* 审核 */
+.review{display:flex;gap:18px}
+.review-list{width:360px;flex-shrink:0}
+.review-item{padding:15px;border-radius:var(--radius-sm);border:1px solid var(--line-2);margin-bottom:11px;background:rgba(255,255,255,.55);cursor:pointer;transition:all .15s}
+.review-item:hover{border-color:var(--brand)}
+.review-item.sel{border-color:var(--brand);background:var(--brand-soft);box-shadow:inset 0 0 0 1px var(--brand)}
+.review-item .rt{font-size:13px;font-weight:600;margin-bottom:7px}
+.review-item .rm{font-size:11px;color:var(--ink-3);display:flex;gap:8px;align-items:center}
+.review-detail{flex:1;min-width:0}
+.chat-box{border:1px solid var(--line);border-radius:var(--radius-sm);background:rgba(255,255,255,.6);display:flex;flex-direction:column;height:300px}
+.chat-msgs{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:11px}
+.msg{max-width:85%;padding:10px 14px;border-radius:15px;font-size:13px;line-height:1.55}
+.msg.ai{align-self:flex-start;background:var(--brand-soft);color:var(--ink);border-bottom-left-radius:5px}
+.msg.me{align-self:flex-end;background:linear-gradient(145deg,#22c55e,#16a34a);color:#fff;border-bottom-right-radius:5px}
+.chat-input{display:flex;gap:9px;padding:12px;border-top:1px solid var(--line-2)}
+.chat-input input{flex:1;padding:10px 14px;border-radius:12px;border:1px solid var(--line);outline:none;font-size:13px;background:#fff}
+.chat-input input:focus{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}
+
+.demo-bar{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);z-index:99;display:flex;align-items:center;gap:10px;padding:11px 20px;border-radius:30px;background:rgba(15,31,22,.85);backdrop-filter:blur(12px);color:#fff;font-size:12px;box-shadow:0 8px 30px rgba(0,0,0,.25)}
+.demo-bar button{padding:6px 16px;border-radius:16px;border:none;font-size:12px;font-weight:600;background:rgba(255,255,255,.15);color:#fff;cursor:pointer}
+.demo-bar button.on{background:#22c55e;color:#fff}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+
+<!-- 左侧导航 -->
+<nav class="rail">
+  <div class="brand">
+    <div class="logo">W</div>
+    <div><div class="bt">WDP 工作台</div><div class="bs">产品团队</div></div>
+  </div>
+
+  <div class="nav-label">工作</div>
+  <button class="rail-btn active" data-view="chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>对话</button>
+  <button class="rail-btn" data-view="board"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>工作台<span class="cnt">33</span></button>
+
+  <div class="nav-label admin-only">管理</div>
+  <button class="rail-btn admin-only" data-view="review"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>入库审核<span class="dot"></span></button>
+  <button class="rail-btn admin-only" data-view="members"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>成员管理</button>
+
+  <div class="nav-label">我的</div>
+  <button class="rail-btn" data-view="me"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>个人中心</button>
+
+  <div class="spacer"></div>
+  <button class="rail-btn settings-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>设置</button>
+
+  <div class="user-card">
+    <div class="avatar" id="avatarEl">管</div>
+    <div><div class="un" id="chipName">guanjie</div><span class="ur" id="chipRole">管理员</span></div>
+  </div>
+</nav>
+
+<!-- 主区 -->
+<div class="main">
+  <div class="topbar">
+    <h1 id="pageTitle">对话</h1>
+    <span class="crumb" id="pageCrumb">和你的专属 agent 协作</span>
+    <div class="right">
+      <div class="search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8aa393" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg><input placeholder="搜索信号 / 需求 / 设计稿…"></div>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- ═══════ Chat 主界面 ═══════ -->
+    <div id="viewChat">
+      <div class="chat-wrap">
+        <div class="chat-side">
+          <div class="panel sess-panel">
+            <div class="side-head"><h3>我的对话</h3><button title="新对话">＋</button></div>
+            <div class="sess-list" id="sessList"></div>
+          </div>
+          <div class="panel ws-panel">
+            <div class="side-head"><h3>个人工作库</h3><button title="添加目录">＋</button></div>
+            <div class="ws-list" id="wsList"></div>
+          </div>
+        </div>
+        <div class="chat-main panel">
+          <div style="flex-shrink:0;display:flex;align-items:center;gap:10px;padding:12px 22px;border-bottom:1px solid var(--line-2)">
+            <div class="model-picker">
+              <span class="lbl">当前模型</span>
+              <select id="chatModelSelect"></select>
+            </div>
+            <span style="font-size:11px;color:var(--ink-3)" id="chatModelHint"></span>
+          </div>
+          <div class="chat-transcript" id="transcript"></div>
+          <div class="chat-composer">
+            <div class="pending-files" id="pendingFiles"></div>
+            <div class="box" id="composerBox">
+              <button class="attach-btn" id="attachBtn" title="上传文件到个人工作库">📎</button>
+              <textarea id="composerInput" rows="1" placeholder="和你的 agent 对话… 可点下方模板，或拖拽文件到这里上传"></textarea>
+              <button class="send" title="发送"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg></button>
+            </div>
+            <div class="hintbar">
+              <button class="chip" data-tpl="帮我清洗一段原始信息成信号：\n\n（粘贴会议纪要 / 客户反馈 / 聊天记录在这里）">📥 清洗信号</button>
+              <button class="chip" data-tpl="列出我名下所有的需求，按状态和优先级汇总">📋 我的需求</button>
+              <button class="chip" data-tpl="帮我写一份产品设计稿，主题是：">📐 写 PRD</button>
+              <button class="chip" data-tpl="问一个 WDP 产品知识问题：">📚 问产品知识</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════ 工作台 ═══════ -->
+    <div id="viewBoard" class="hidden">
+      <div class="tabs">
+        <button class="tab active" data-tab="signals">📥 信息 <span class="badge">14</span></button>
+        <button class="tab" data-tab="requirements">📋 需求 <span class="badge">13</span></button>
+        <button class="tab" data-tab="designs">📐 设计 <span class="badge">7</span></button>
+      </div>
+
+      <div id="tab-signals">
+        <div class="stat-grid">
+          <div class="stat"><div class="num">14</div><div class="lbl">信号总数</div><div class="trend up">↑ 本周 +6</div></div>
+          <div class="stat"><div class="num">5</div><div class="lbl">待确认</div><div class="trend" style="color:var(--amber)">需人工校验</div></div>
+          <div class="stat"><div class="num">2</div><div class="lbl">已转需求</div><div class="trend up">转化率 14%</div></div>
+          <div class="stat"><div class="num">3</div><div class="lbl">高紧急</div><div class="trend" style="color:var(--danger)">需优先处理</div></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
+            <h2>信号列表</h2><span class="hint">点击行展开详情</span>
+            <div style="margin-left:auto;display:flex;gap:8px">
+              <button class="btn sm">筛选 ▾</button>
+              <button class="btn sm primary admin-only">＋ 沉淀为需求</button>
+              <button class="btn sm admin-only">归并</button>
+            </div>
+          </div>
+          <div class="panel-body" style="padding:0">
+            <table>
+              <thead><tr><th>日期</th><th>标题</th><th>来源</th><th>类别</th><th>紧急度</th><th>可信度</th><th>状态</th></tr></thead>
+              <tbody id="signalRows"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div id="tab-requirements" class="hidden">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>需求看板</h2><span class="hint">点击卡片展开详情与溯源</span>
+            <div style="margin-left:auto;display:flex;gap:8px">
+              <button class="btn sm">按负责人 ▾</button>
+              <button class="btn sm admin-only">通知组员</button>
+            </div>
+          </div>
+          <div class="panel-body"><div class="board" id="reqBoard"></div></div>
+        </div>
+      </div>
+
+      <div id="tab-designs" class="hidden">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>设计稿</h2><span class="hint">面向 agent 的完整设计 · 可追溯关联需求</span>
+            <div style="margin-left:auto"><button class="btn sm admin-only primary">＋ 新建设计</button></div>
+          </div>
+          <div class="panel-body" style="padding:0">
+            <table>
+              <thead><tr><th>编号</th><th>标题</th><th>关联需求</th><th>模块</th><th>状态</th><th>日期</th></tr></thead>
+              <tbody id="designRows"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════ 入库审核（admin） ═══════ -->
+    <div id="viewReview" class="hidden">
+      <div class="panel">
+        <div class="panel-head"><h2>📨 入库审核</h2><span class="hint">成员提交的申请 · 确认后由主 Agent 入库并建立路由</span></div>
+        <div class="panel-body">
+          <div class="review">
+            <div class="review-list" id="reviewList"></div>
+            <div class="review-detail">
+              <div class="panel" style="box-shadow:none;border-style:dashed">
+                <div class="panel-head"><h2 style="font-size:14px">入库建议说明</h2><span class="hint">agent 已分析，可用自然语言确认细节</span></div>
+                <div class="panel-body" id="reviewSuggest" style="font-size:13px;line-height:1.75"></div>
+              </div>
+              <div style="height:16px"></div>
+              <div class="chat-box">
+                <div class="chat-msgs" id="reviewChat"></div>
+                <div class="chat-input">
+                  <input placeholder="和主 Agent 确认入库细节，如：放到 requirements/，命名 REQ-xxx">
+                  <button class="btn primary">发送</button>
+                </div>
+              </div>
+              <div style="display:flex;gap:10px;margin-top:16px">
+                <button class="btn primary">✓ 通过入库</button>
+                <button class="btn">↩ 驳回（附理由）</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════ 成员管理（admin） ═══════ -->
+    <div id="viewMembers" class="hidden">
+      <div class="panel">
+        <div class="panel-head"><h2>👥 成员管理</h2><span class="hint">账号 · profile · 用量</span>
+          <div style="margin-left:auto"><button class="btn primary sm">＋ 添加成员</button></div>
+        </div>
+        <div class="panel-body" style="padding:0">
+          <table>
+            <thead><tr><th>成员</th><th>profile</th><th>角色</th><th>本月用量</th><th>入库贡献</th><th>存档占用</th><th>状态</th><th>操作</th></tr></thead>
+            <tbody id="memberRows"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════ 个人中心 ═══════ -->
+    <div id="viewMe" class="hidden">
+      <div class="me-grid">
+        <div class="me-nav panel" style="padding:12px">
+          <button class="active" data-me="agent"><span class="ic">🤖</span>我的 Agent</button>
+          <button data-me="workspace"><span class="ic">📁</span>个人工作库</button>
+          <button data-me="memory"><span class="ic">🧠</span>个人 Memory</button>
+          <button data-me="logs"><span class="ic">📜</span>运行日志</button>
+        </div>
+        <div class="me-content">
+
+          <!-- 我的 Agent -->
+          <div id="me-agent">
+            <!-- SOUL 分层：团队规则（只读）+ 个人个性（可编辑） -->
+            <div class="panel">
+              <div class="panel-head"><h2>🤖 我的 Agent</h2><span class="hint">团队规则（最高优先级）+ 个人风格</span></div>
+              <div class="panel-body">
+                <!-- 团队 SOUL（只读，最高优先级） -->
+                <div class="form-row">
+                  <div class="fl">🔒 团队规则<span class="fs">管理员维护 · 最高优先级 · 只读</span></div>
+                  <div class="fc">
+                    <div style="background:var(--brand-soft);border:1px solid var(--line);border-radius:11px;padding:14px 16px;font-size:12.5px;line-height:1.75;color:var(--ink)">
+                      <b>你是 WDP 产品团队 AI 工作台的成员助手，必须遵守团队铁律：</b><br>
+                      ① <b>单一数据源</b>：团队知识只认 knowledge/，不搞第二份清单<br>
+                      ② <b>知识优先级</b>：团队库 &gt; 个人 memory &gt; 模型自身知识<br>
+                      ③ <b>工作流产出收敛</b>：信号/需求/设计必须结构化入 knowledge/ 对应目录，可追溯（需求追信号、设计追需求），保证团队知识库收敛不发散<br>
+                      ④ <b>汇报口径</b>：WDP=AES唯一开放平台层；国产化=金仓KingbaseES(非达梦)；编辑器五大主线(不含已废弃画布/蓝图等)；成果表述诚实(雏形≠已支持)<br>
+                      ⑤ <b>环境鉴别</b>：读个人工作库文件前先声明当前环境，读不到/指纹不符时明确提示，绝不编造文件内容<br>
+                      <span style="color:var(--ink-3);font-size:11px">（个人风格与以上冲突时，以团队规则为准）</span>
+                    </div>
+                  </div>
+                </div>
+                <!-- 个人 SOUL（可编辑） -->
+                <div class="form-row">
+                  <div class="fl">✏️ 我的个性<span class="fs">SOUL.md · 在团队规则框架内自定义</span></div>
+                  <div class="fc"><textarea id="soulText">你是张三的专属产品助手，风格务实直接。擅长信号清洗和竞品分析，回复偏好表格和清单。涉及 WDP 产品知识时，优先引用团队知识库。</textarea>
+                    <div class="kv-line">⚠ 若与上方团队规则冲突，将以团队规则为准 · 改完后下一轮对话生效</div></div>
+                </div>
+                <div style="display:flex;gap:10px"><button class="btn primary">保存我的个性</button></div>
+              </div>
+            </div>
+            <div style="height:16px"></div>
+
+            <!-- 模型渠道管理 -->
+            <div class="panel">
+              <div class="panel-head"><h2>🔌 模型渠道</h2><span class="hint">配置服务商 + Key，可多个 · 对话时选用</span>
+                <div style="margin-left:auto"><button class="btn primary sm" id="addChannelBtn">＋ 添加渠道</button></div>
+              </div>
+              <div class="panel-body" style="padding:16px 22px" id="channelList"></div>
+            </div>
+            <div style="height:16px"></div>
+
+            <!-- 兜底说明 -->
+            <div class="panel" style="border-style:dashed;box-shadow:none">
+              <div class="panel-body" style="font-size:12px;color:var(--ink-2);line-height:1.7">
+                🔒 <b>关于额度</b>：配了自己的渠道就花自己的额度；一个都不配时，自动走<b>团队公共 Key</b> 兜底（管理员统一配置）。
+                你的 Key 仅存储在个人空间（.env，权限 600），他人与管理员不可见。
+              </div>
+            </div>
+          </div>
+
+          <!-- 个人工作库（环境 + 目录管理） -->
+          <div id="me-workspace" class="hidden">
+            <!-- 我的设备环境 -->
+            <div class="panel">
+              <div class="panel-head"><h2>🖥 我的设备环境</h2><span class="hint">登记你的设备，agent 据此鉴别"当前连的是不是你的工作库"</span>
+                <div style="margin-left:auto"><button class="btn primary sm">＋ 登记当前设备</button></div>
+              </div>
+              <div class="panel-body" id="envList"></div>
+            </div>
+            <div style="height:16px"></div>
+
+            <!-- 工作库目录 -->
+            <div class="panel">
+              <div class="panel-head"><h2>📁 工作库目录</h2><span class="hint">绑定到设备环境 · 可配 git 仓库作为离线同步通道</span>
+                <div style="margin-left:auto"><button class="btn primary sm">＋ 添加工作库</button></div>
+              </div>
+              <div class="panel-body" style="padding:0">
+                <table>
+                  <thead><tr><th>名称</th><th>本地物理地址</th><th>绑定环境</th><th>Git 仓库</th><th>索引状态</th><th>操作</th></tr></thead>
+                  <tbody id="wsTable"></tbody>
+                </table>
+              </div>
+            </div>
+            <div style="height:16px"></div>
+
+            <!-- uploads + 说明 -->
+            <div class="panel">
+              <div class="panel-head"><h2 style="font-size:14px">📤 uploads/ 最近上传</h2><span class="hint">上传到服务器的精选小文件</span></div>
+              <div class="panel-body" id="uploadList"></div>
+            </div>
+            <div style="height:16px"></div>
+            <div class="panel" style="border-style:dashed;box-shadow:none">
+              <div class="panel-body" style="font-size:12px;color:var(--ink-2);line-height:1.75">
+                💡 <b>工作方式</b>：工作库<b>本体留在你的设备</b>（大文件、杂文件不上服务器），服务器只存<b>索引</b>（文件清单）。
+                agent 工作时先声明当前环境，通过<b>设备指纹 + 工作库指纹文件</b>鉴别是不是你登记的库——对得上才读，对不上会明确告警（防止同名目录误读）。
+                设备离线时，若配了 git 仓库，agent 可从 git 拉取最新提交作为降级。
+              </div>
+            </div>
+          </div>
+
+          <!-- 个人 Memory -->
+          <div id="me-memory" class="hidden">
+            <div class="panel">
+              <div class="panel-head"><h2>🧠 个人 Memory</h2><span class="hint">agent 记住的关于你的偏好与事实 · 越用越懂你</span>
+                <div style="margin-left:auto"><button class="btn primary sm">＋ 手动添加</button></div>
+              </div>
+              <div class="panel-body" id="memList"></div>
+            </div>
+          </div>
+
+          <!-- 运行日志 -->
+          <div id="me-logs" class="hidden">
+            <div class="panel">
+              <div class="panel-head"><h2>📜 运行日志</h2><span class="hint">你的 agent 后台运行情况</span></div>
+              <div class="panel-body">
+                <div class="log-bar">
+                  <select><option>agent.log</option><option>errors.log</option><option>cron.log</option></select>
+                  <input placeholder="过滤关键字…">
+                  <button class="btn sm">刷新</button>
+                  <button class="btn sm">下载</button>
+                </div>
+                <div class="log-box" id="logBox"></div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- 拖拽上传提示 -->
+<div class="drag-tip" id="dragTip"><div class="inner">📎 松开鼠标，上传文件到个人工作库 uploads/</div></div>
+
+<!-- 角色切换演示条 -->
+<div class="demo-bar">
+  <span>👁 视角预览：</span>
+  <button id="btnAdmin" class="on">管理员</button>
+  <button id="btnMember">成员</button>
+</div>
+
+<script>
+const $=s=>document.querySelector(s);
+function tag(txt,color){return `<span class="tag ${color}">${txt}</span>`}
+function urgColor(u){return u==='高'?'red':u==='中'?'amber':'gray'}
+function stColor(s){return s==='待确认'?'amber':s==='已确认'?'blue':s==='已转需求'?'green':'gray'}
+
+/* ══ Mock 数据 ══ */
+const SIGNALS=[
+ {d:'07-21',t:'客户A希望知识工坊支持Excel批量导入标注',s:'客户反馈',c:'需求信号',u:'高',cf:'高',st:'待确认',m:'知识工坊',detail:'客户A（制造业）在车间数字孪生项目中，每个项目需手工整理数百条设备标注。希望知识工坊数据标注模块支持 Excel 批量导入，减少重复劳动。涉及 S2 标注模块的数据接入能力。',raw:'客户A的车间主任说，现在每次做数字孪生项目都要手工整理几百条设备标注，太费劲了，希望知识工坊能直接导入Excel批量搞定。'},
+ {d:'07-21',t:'编辑器导出3DTiles在麒麟OS下偶发失败',s:'客户反馈',c:'问题信号',u:'高',cf:'高',st:'待确认',m:'编辑器',detail:'客户B（政务）在国产化环境（麒麟V10 SP3 + 海光CPU）部署后，编辑器导出 3DTiles 约每 5 次有 1 次失败，报错与临时目录权限相关。影响国产化项目交付验收。',raw:'部署在麒麟系统上的编辑器，导出3DTiles的时候时不时失败，大概五次里有一次，日志里说是临时目录权限问题，下周就要验收了很着急。'},
+ {d:'07-20',t:'竞品XX推出云渲染+AI场景自动生成功能',s:'竞品动态',c:'趋势信号',u:'中',cf:'中',st:'已确认',m:'编辑器',detail:'竞品XX在新版本中加入AI场景自动生成能力，可根据文本描述自动摆放植被、道路和建筑配景。与我方编辑器智能建模方向重合，需评估差异化策略。',raw:'竞品发布会演示了输入一段话自动生成园区场景的功能，客户群里有人转发问我们有没有类似的。'},
+ {d:'07-20',t:'客户B询问国产化是否支持达梦数据库',s:'客户反馈',c:'需求信号',u:'中',cf:'高',st:'已转需求',m:'国产化',detail:'客户B（政务）询问 WDP 国产化私有化部署是否支持达梦数据库。当前口径：从 5.6 起支持金仓 KingbaseES（非达梦）。已转需求 REQ-20260720-002。',raw:'客户B信息科问：你们国产化版本数据库用的是什么？我们单位统购的是达梦，金仓的话可能走不通采购。'},
+ {d:'07-19',t:'销售反馈尊享版报价客户接受度偏低',s:'会议纪要',c:'风险信号',u:'中',cf:'中',st:'已确认',m:'商务',detail:'Q3 销售周会反馈：尊享版 38.8万/年 报价在三家中型客户处遇阻，客户普遍认为标准版功能已够用，尊享版差异化价值感知不足。',raw:'销售总监在会上说，好几个客户看完报价单直接问"标准版和尊享版差的那20万到底买了啥"，销售现场答得不太好。'},
+ {d:'07-19',t:'希望API调试面板支持代码片段收藏',s:'客户反馈',c:'需求信号',u:'低',cf:'高',st:'待确认',m:'编辑器',detail:'多位交付工程师反馈，API 调试面板调试好的镜头代码每次都要复制到本地保存，希望面板内支持代码片段收藏与命名。',raw:'交付群里工程师说：调试面板里调好的相机漫游代码，下次用还得翻聊天记录找，能不能收藏在面板里。'},
+ {d:'07-18',t:'客户C咨询AES城市底板更新频率',s:'聊天记录',c:'需求信号',u:'低',cf:'中',st:'已确认',m:'AES底板',detail:'客户C询问官方AES城市底板的数据更新频率与覆盖城市清单，关心二线城市数据现势性。',raw:'客户C在项目群里问：你们那个AES城市底板多久更新一次？我们这种二线城市的数据是哪一年的？'},
+ {d:'07-18',t:'知识工坊Neo4j空间图谱查询响应偏慢',s:'语音',c:'问题信号',u:'中',cf:'中',st:'待确认',m:'知识工坊',detail:'内测用户反馈知识工坊空间图谱（Neo4j）在实体超过 5 万后查询响应明显变慢（>3s），影响 Agent 联调体验。',raw:'内测群里有人语音说：图谱数据一多查询就卡，等好几秒才出结果，agent连着调用的时候体验不太好。'},
+ {d:'07-17',t:'客户A提出镜头漫游模板库需求',s:'客户反馈',c:'需求信号',u:'中',cf:'高',st:'已转需求',m:'编辑器',detail:'客户A希望编辑器提供常用镜头漫游模板（环绕、穿越、升降），可一键应用到场景。已转需求 REQ-20260717-001。',raw:'客户A说每次给客户演示都要手动编排镜头路线，要是能有几个现成的漫游模板直接套就好了。'},
+ {d:'07-17',t:'云渲染串流在弱网环境下卡顿',s:'客户反馈',c:'问题信号',u:'高',cf:'中',st:'已确认',m:'云渲染',detail:'某客户现场网络带宽约 20Mbps 时，云渲染串流画面出现明显卡顿与马赛克。弱网自适应码率策略需评估。',raw:'客户现场网不太好，演示的时候画面一卡一卡的还有马赛克，虽然解释是网络问题但客户印象打了折扣。'},
+ {d:'07-16',t:'企微文档MCP接入需求（内部）',s:'会议纪要',c:'需求信号',u:'中',cf:'高',st:'已归档',m:'基础设施',detail:'团队例会确认：工作台需接入企微文档 MCP 以实时拉取报价表与版本发版索引。已归档并纳入部署规划。',raw:'例会上定的：知识库报价和版本信息现在靠人工核对，效率低还容易过期，尽快把企微文档MCP配上。'},
+ {d:'07-15',t:'客户D希望交付案例支持链接有效期控制',s:'客户反馈',c:'需求信号',u:'低',cf:'高',st:'已确认',m:'交付',detail:'客户D（地产）希望"交付给我的"案例分享链接支持有效期设置与访问密码。',raw:'客户D说分享给甲方的链接一直有效心里不踏实，能不能设个7天有效期再加个密码。'},
+ {d:'07-15',t:'WDP6前瞻规划讨论（内部保密）',s:'会议纪要',c:'趋势信号',u:'低',cf:'低',st:'已归档',m:'战略',detail:'内部战略讨论：AI Native WDP 作为新形态平台产品的早期构思。按口径铁律：早期策划勿明说"WDP6"。已归档，限团队内部可见。',raw:'（内部讨论纪要，略）'},
+ {d:'07-14',t:'标准版客户询问能否按模块增购API额度',s:'客户反馈',c:'需求信号',u:'低',cf:'中',st:'待确认',m:'商务',detail:'两家标准版客户询问能否不升级尊享版、仅按模块增购 API 调用额度。涉及版本权益灵活性。',raw:'客户说我们暂时用不上尊享版全部功能，但API额度不太够，能不能单独买额度包。'},
+];
+const REQ_LANES=[
+ {name:'待校验',color:'#d97706',cards:[
+   {t:'知识工坊 Excel 批量导入标注',p:'P1',m:'知识工坊',o:'张三',v:'制造业客户刚需，减少数百条标注的手工整理成本',sig:'SIG-20260721-001'},
+   {t:'API调试面板代码片段收藏',p:'P2',m:'编辑器',o:'李四',v:'提升交付工程师 API 联调效率',sig:'SIG-20260719-006'},
+   {t:'标准版按模块增购API额度',p:'P3',m:'商务',o:'待分配',v:'提升标准版客单价灵活性',sig:'SIG-20260714-013'}]},
+ {name:'已确认',color:'#2563eb',cards:[
+   {t:'编辑器国产化麒麟OS适配修复',p:'P0',m:'编辑器',o:'张三',v:'保障政务客户国产化项目验收',sig:'SIG-20260721-002'},
+   {t:'达梦数据库适配评估',p:'P2',m:'国产化',o:'李四',v:'响应政务客户达梦采购要求',sig:'SIG-20260720-002'},
+   {t:'尊享版报价方案优化',p:'P2',m:'商务',o:'王五',v:'提升尊享版差异化价值感知',sig:'SIG-20260719-004'},
+   {t:'云渲染弱网自适应码率',p:'P1',m:'云渲染',o:'李四',v:'改善弱网环境交付演示体验',sig:'SIG-20260717-008'}]},
+ {name:'设计中',color:'#7c3aed',cards:[
+   {t:'知识工坊数据标注模块S2迭代',p:'P1',m:'知识工坊',o:'guanjie',v:'S2核心模块，支撑标注效率',sig:'SIG-20260715-009'},
+   {t:'镜头漫游模板库',p:'P1',m:'编辑器',o:'张三',v:'演示场景一键套用，减少编排时间',sig:'SIG-20260717-007'}]},
+ {name:'研发中',color:'#16a34a',cards:[
+   {t:'3DTiles导出稳定性优化',p:'P1',m:'编辑器',o:'李四',v:'解决国产化环境导出偶发失败',sig:'SIG-20260721-002'},
+   {t:'案例分享链接有效期+密码',p:'P2',m:'交付',o:'王五',v:'满足客户交付安全诉求',sig:'SIG-20260715-010'}]},
+ {name:'已上线',color:'#4b5d52',cards:[
+   {t:'编辑器五大主线能力梳理',p:'P2',m:'编辑器',o:'guanjie',v:'统一对外能力口径',sig:'SIG-20260701-001'}]},
+];
+const DESIGNS=[
+ {id:'DSN-20260720',t:'多用户公网部署平台设计',req:'—',m:'基础设施',st:'已定稿',d:'07-20'},
+ {id:'DSN-20260718',t:'知识工坊标注模块S2 PRD',req:'REQ-20260715-009',m:'知识工坊',st:'评审中',d:'07-18'},
+ {id:'DSN-20260717',t:'镜头漫游模板库设计稿',req:'REQ-20260717-001',m:'编辑器',st:'草稿',d:'07-17'},
+ {id:'DSN-20260715',t:'API调试面板增强设计',req:'REQ-20260712-004',m:'编辑器',st:'已定稿',d:'07-15'},
+ {id:'DSN-20260714',t:'案例分享链接权限控制方案',req:'REQ-20260715-010',m:'交付',st:'评审中',d:'07-14'},
+ {id:'DSN-20260710',t:'工作台信号清洗skill设计',req:'—',m:'基础设施',st:'已归档',d:'07-10'},
+ {id:'DSN-20260708',t:'编辑器国产化部署手册v1.2',req:'—',m:'国产化',st:'已归档',d:'07-08'},
+];
+const REVIEWS=[
+ {t:'客户A-Excel批量导入标注信号',from:'张三',time:'07-21 10:24',type:'信号',dir:'knowledge/signals/',name:'2026-07-21-客户A-excel批量导入标注.md',sum:'客户A（制造业）希望知识工坊数据标注支持 Excel 批量导入，涉及 S2 标注模块，一手客户反馈，可信度高。',link:'与 REQ-20260715（标注模块S2）相关，建议作为其补充信号；无重复文件。'},
+ {t:'竞品XX-AI场景生成分析',from:'李四',time:'07-21 09:11',type:'知识',dir:'knowledge/knowledge/竞品/',name:'竞品XX-AI场景生成能力分析.md',sum:'竞品XX云渲染+AI场景自动生成功能分析，含发布会截图与客户反应，供编辑器智能建模差异化参考。',link:'建议归入竞品知识库；与编辑器智能建模主线相关。'},
+ {t:'编辑器国产化适配候选需求',from:'张三',time:'07-20 16:40',type:'需求',dir:'knowledge/requirements/',name:'REQ-20260720-编辑器麒麟OS适配修复.md',sum:'麒麟V10 SP3 + 海光环境下 3DTiles 导出偶发失败，影响政务客户验收，建议定 P0。',link:'由 SIG-20260721-002 转入；与研发中「3DTiles导出稳定性优化」为同主题，建议合并跟踪。'},
+ {t:'达梦数据库适配评估候选需求',from:'李四',time:'07-20 14:05',type:'需求',dir:'knowledge/requirements/',name:'REQ-20260720-达梦数据库适配评估.md',sum:'政务客户要求达梦数据库，当前口径为金仓KingbaseES，需评估达梦适配工作量与规划。',link:'由 SIG-20260720-002 转入；涉及报价与交付周期，建议商务会签。'},
+];
+const MEMBERS=[
+ {n:'guanjie',p:'default',r:'管理员',u:'—',c:'—',storage:'—',on:true,me:true},
+ {n:'zhangsan',p:'zhangsan',r:'成员',u:'12.4万',c:'8 条',storage:'32 MB',on:true},
+ {n:'lisi',p:'lisi',r:'成员',u:'8.1万',c:'5 条',storage:'24 MB',on:true},
+ {n:'wangwu',p:'wangwu',r:'成员',u:'5.6万',c:'3 条',storage:'112 MB',warn:true,on:true},
+ {n:'zhaoliu',p:'zhaoliu',r:'成员',u:'1.2万',c:'1 条',storage:'6 MB',on:false},
+];
+const SESS=[
+ {t:'知识工坊S2信号整理',m:'3 条消息 · 今天 10:24',active:true},
+ {t:'编辑器PRD起草',m:'12 条消息 · 昨天'},
+ {t:'竞品XX分析',m:'5 条消息 · 昨天'},
+ {t:'客户A拜访纪要清洗',m:'8 条消息 · 07-19'},
+ {t:'国产化适配问题排查',m:'6 条消息 · 07-18'},
+];
+const ENVS=[
+ {name:'公司办公机',env:'a3f8c2',online:true,icon:'🖥'},
+ {name:'家里笔记本',env:'7b21e9',online:false,icon:'💻'},
+];
+const WORKSPACES=[
+ {n:'默认工作库',local:'D:\\work\\',env:'a3f8c2',git:'git@gitlab.local:zs/work',files:128,synced:'今天 09:30',note:''},
+ {n:'竞品素材',local:'D:\\research\\竞品\\',env:'a3f8c2',git:'',files:46,synced:'昨天 18:20',note:''},
+ {n:'家里-临时素材',local:'/Users/zs/work/temp/',env:'7b21e9',git:'git@github.com:zs/temp',files:12,synced:'07-18',note:''},
+];
+const UPLOADS=[
+ {n:'客户A拜访纪要-0721.docx',s:'2.3 MB',t:'今天 10:20'},
+ {n:'竞品XX发布会截图.png',s:'1.1 MB',t:'昨天 16:40'},
+ {n:'麒麟OS部署报错日志.txt',s:'48 KB',t:'07-19'},
+];
+const MEMS=[
+ {t:'张三负责知识工坊和编辑器模块',d:'偏好 · 07-15 记录'},
+ {t:'信号清洗时按"客户原话→事实→推测"三层拆分',d:'工作习惯 · 07-12 记录'},
+ {t:'常用客户：客户A（制造业）、客户B（政务）',d:'事实 · 07-10 记录'},
+ {t:'回复偏好表格和清单，简洁为主',d:'偏好 · 07-08 记录'},
+];
+const LOGS=[
+ ['li','10:24:12','[zhangsan] 加载 skill: signal-intake'],
+ ['li','10:24:13','读取 knowledge/ 团队知识库索引'],
+ ['li','10:24:15','调用模型 kimi-k3 (openrouter)'],
+ ['lw','10:24:18','信号置信度评估：高（一手客户）'],
+ ['li','10:24:19','写入 inbox/SIG-20260721-001.md'],
+ ['li','10:24:19','生成《入库建议说明》'],
+ ['le','10:25:02','上传文件解析失败：客户A-旧版.xlsx（格式过旧，已跳过）'],
+ ['li','10:25:03','通知管理员：有新的入库申请'],
+];
+
+/* ══ 视图切换 ══ */
+const TITLES={chat:['对话','和你的专属 agent 协作'],board:['团队工作台','知识库沉淀与产研协作'],review:['入库审核','成员申请的入库确认'],members:['成员管理','账号与权限'],me:['个人中心','配置你的 agent 与空间']};
+const views={chat:'#viewChat',board:'#viewBoard',review:'#viewReview',members:'#viewMembers',me:'#viewMe'};
+function show(v){
+  Object.values(views).forEach(s=>$(s).classList.add('hidden'));
+  $(views[v]).classList.remove('hidden');
+  document.querySelectorAll('.rail-btn[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===v));
+  const[t,c]=TITLES[v];$('#pageTitle').textContent=t;$('#pageCrumb').textContent=c;
+}
+document.querySelectorAll('.rail-btn[data-view]').forEach(b=>b.addEventListener('click',()=>show(b.dataset.view)));
+
+/* ══ 工作台 tab ══ */
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));t.classList.add('active');
+  ['signals','requirements','designs'].forEach(k=>$('#tab-'+k).classList.toggle('hidden',k!==t.dataset.tab));
+}));
+
+/* ══ 渲染：信号（可展开） ══ */
+$('#signalRows').innerHTML=SIGNALS.map((x,i)=>`
+ <tr class="exp-row" data-i="${i}">
+  <td style="color:var(--ink-3)"><span class="caret">▶</span>${x.d}</td>
+  <td style="font-weight:600;max-width:300px">${x.t}</td>
+  <td>${tag(x.s,'gray')}</td><td>${tag(x.c,'blue')}</td><td>${tag(x.u,urgColor(x.u))}</td>
+  <td>${tag(x.cf,'green')}</td><td>${tag(x.st,stColor(x.st))}</td></tr>
+ <tr class="exp-detail" data-i="${i}"><td colspan="7"><div class="detail-box">
+   <div class="sec"><div class="sec-t">📄 信号内容</div><div class="sec-b">${x.detail}</div></div>
+   <div class="sec"><div class="sec-t">🔑 关键信息</div><div class="kv">
+     <div><div class="k">信号编号</div><div class="v">SIG-20260721-${String(i+1).padStart(3,'0')}</div></div>
+     <div><div class="k">相关模块</div><div class="v">${x.m}</div></div>
+     <div><div class="k">来源说明</div><div class="v">${x.s}</div></div>
+     <div><div class="k">采集人</div><div class="v">张三</div></div></div></div>
+   <div class="sec"><div class="sec-t">💬 原始信息</div><div class="raw">"${x.raw}"</div></div>
+   <div class="detail-actions admin-only"><button class="btn sm primary">＋ 沉淀为需求</button><button class="btn sm">归并</button><button class="btn sm">标记已确认</button></div>
+ </div></td></tr>`).join('');
+document.querySelectorAll('#signalRows .exp-row').forEach(row=>row.addEventListener('click',()=>{
+  const i=row.dataset.i;const open=row.classList.toggle('open');
+  document.querySelector(`#signalRows .exp-detail[data-i="${i}"]`).classList.toggle('show',open);
+}));
+
+/* ══ 渲染：需求看板（可展开） ══ */
+$('#reqBoard').innerHTML=REQ_LANES.map(l=>`<div class="lane">
+ <div class="lane-head"><span class="t">${l.name}</span><span class="cnt">${l.cards.length}</span></div>
+ <div class="bar" style="background:${l.color}"></div>
+ ${l.cards.map(c=>`<div class="card-item"><div class="tt">${c.t}</div>
+   <div class="meta">${tag(c.p,c.p==='P0'?'red':c.p==='P1'?'amber':'gray')}${tag(c.m,'blue')}<span class="owner"><span class="oa">${c.o[0]}</span>${c.o}</span></div>
+   <div class="detail">
+     <div class="row"><span class="k">业务价值</span><span>${c.v}</span></div>
+     <div class="row"><span class="k">溯源</span><span>${c.sig}（${c.m}）</span></div>
+     <div class="row"><span class="k">目标版本</span><span>WDP 5.16</span></div>
+     <div class="detail-actions admin-only" style="margin-top:10px;padding-top:10px"><button class="btn sm">分配</button><button class="btn sm">通知</button></div>
+   </div><div class="expand-hint">点击展开 ▾</div></div>`).join('')}</div>`).join('');
+document.querySelectorAll('#reqBoard .card-item').forEach(card=>card.addEventListener('click',()=>{
+  card.classList.toggle('expanded');
+  const hint=card.querySelector('.expand-hint');
+  if(hint)hint.textContent=card.classList.contains('expanded')?'点击收起 ▴':'点击展开 ▾';
+}));
+
+/* ══ 渲染：设计稿 ══ */
+$('#designRows').innerHTML=DESIGNS.map(x=>`<tr>
+ <td style="color:var(--ink-3);font-family:monospace;font-size:12px">${x.id}</td>
+ <td style="font-weight:600">${x.t}</td><td style="color:var(--ink-3)">${x.req}</td>
+ <td>${tag(x.m,'blue')}</td><td>${tag(x.st,x.st==='已定稿'?'green':x.st==='已归档'?'gray':'purple')}</td>
+ <td style="color:var(--ink-3)">${x.d}</td></tr>`).join('');
+
+/* ══ 渲染：审核（可切换） ══ */
+$('#reviewList').innerHTML=REVIEWS.map((r,i)=>`<div class="review-item ${i===0?'sel':''}" data-i="${i}">
+ <div class="rt">${r.t}</div><div class="rm">${tag(r.type,'green')}<span>${r.from} · ${r.time}</span></div></div>`).join('');
+function renderReview(i){const r=REVIEWS[i];$('#reviewSuggest').innerHTML=`<b>建议入库目录：</b>${r.dir}<br><b>建议命名：</b>${r.name}<br><b>内容摘要：</b>${r.sum}<br><b>关联/冲突：</b>${r.link}`;}
+renderReview(0);
+document.querySelectorAll('.review-item').forEach(item=>item.addEventListener('click',()=>{
+  document.querySelectorAll('.review-item').forEach(x=>x.classList.remove('sel'));item.classList.add('sel');renderReview(+item.dataset.i);
+}));
+$('#reviewChat').innerHTML=`<div class="msg ai">我已分析这份内容，给出了入库建议（目录/命名/关联），需要调整吗？</div><div class="msg me">命名按建议来，目录确认无误。</div><div class="msg ai">好的，确认后将由主 Agent 入库、git commit 并建立关联路由。</div>`;
+
+/* ══ 渲染：成员 ══ */
+$('#memberRows').innerHTML=MEMBERS.map(m=>`<tr style="cursor:default">
+ <td><div style="display:flex;align-items:center;gap:9px"><span class="oa" style="width:26px;height:26px;font-size:10px">${m.n[0]}</span><b>${m.n}</b>${m.me?tag('你','green'):''}</div></td>
+ <td style="color:var(--ink-3);font-family:monospace;font-size:12px">${m.p}</td>
+ <td>${tag(m.r,m.r==='管理员'?'purple':'gray')}</td><td>${m.u}</td><td>${m.c}</td>
+ <td>${m.me?'—':`<span style="font-weight:600">${m.storage}</span>${m.warn?'<div style="font-size:10px;color:var(--amber);margin-top:2px">⚠ 对话较多，建议归档</div>':''}`}</td>
+ <td>${m.on?tag('正常','green'):tag('已停用','red')}</td>
+ <td>${m.me?'—':`<button class="btn sm ghost">重置密码</button><button class="btn sm ghost">${m.on?'停用':'启用'}</button><button class="btn sm ghost">踢下线</button>`}</td></tr>`).join('');
+
+/* ══ 渲染：chat 会话 / 工作库 / 对话 ══ */
+$('#sessList').innerHTML=SESS.map(s=>`<div class="sess ${s.active?'active':''}"><div class="st">${s.t}</div><div class="sm">${s.m}</div></div>`).join('');
+document.querySelectorAll('.sess').forEach(s=>s.addEventListener('click',()=>{document.querySelectorAll('.sess').forEach(x=>x.classList.remove('active'));s.classList.add('active');}));
+$('#wsList').innerHTML=WORKSPACES.map((w,i)=>`<div class="ws-item ${i===0?'active':''}"><span class="wi">📁</span><span class="wt">${w.n}</span><span class="wn">${w.files}个文件</span></div>`).join('');
+document.querySelectorAll('.ws-item').forEach(w=>w.addEventListener('click',()=>{document.querySelectorAll('.ws-item').forEach(x=>x.classList.remove('active'));w.classList.add('active');}));
+
+const meName='张';
+$('#transcript').innerHTML=`
+ <div class="cmsg me"><div class="cav">${meName}</div><div class="cb"><div class="cn">我 · 10:23</div>
+   <div class="cc">帮我把这份纪要清洗成信号
+   <div class="attach-card"><span class="ai">📄</span><span class="an">客户A拜访纪要-0721.docx</span><span class="as">2.3 MB</span></div></div></div></div>
+ <div class="cmsg ai"><div class="cav">AI</div><div class="cb"><div class="cn">你的 agent · 10:24</div>
+   <div class="cc">已读取你上传到个人工作库的《客户A拜访纪要-0721.docx》，用 signal-intake 清洗完成，产出 1 条信号：
+   <div class="tool-card"><div class="th">📥 结构化信号 · SIG-20260721-001</div><div class="tb">
+    <b>标题：</b>客户A希望知识工坊支持Excel批量导入标注<br>
+    <b>类别：</b>需求信号 · <b>紧急度：</b>高 · <b>可信度：</b>高（一手客户）<br>
+    <b>相关模块：</b>知识工坊 / 数据标注</div></div>
+   要提交到团队知识库吗？</div></div></div>
+ <div class="cmsg me"><div class="cav">${meName}</div><div class="cb"><div class="cn">我 · 10:24</div><div class="cc">提交入库</div></div></div>
+ <div class="cmsg ai"><div class="cav">AI</div><div class="cb"><div class="cn">你的 agent · 10:24</div>
+   <div class="cc">✅ 已提交到团队入库审核，并生成了《入库建议说明》。管理员审核通过后会正式入库并通知你。</div></div></div>`;
+
+/* ══ 输入框 + 模板按钮置灰 ══ */
+const ta=document.getElementById('composerInput');
+const chips=document.querySelectorAll('.hintbar .chip');
+function syncChips(){const hasText=(ta&&ta.value.trim().length>0)||pendingFiles.length>0;chips.forEach(c=>c.disabled=hasText);}
+function autoGrow(){if(!ta)return;ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,120)+'px';}
+if(ta)ta.addEventListener('input',()=>{autoGrow();syncChips();});
+chips.forEach(c=>c.addEventListener('click',()=>{
+  if(c.disabled||!ta)return;
+  ta.value=c.getAttribute('data-tpl')||'';ta.focus();autoGrow();syncChips();
+}));
+
+/* ══ 文件上传（按钮 + 拖拽） ══ */
+let pendingFiles=[];
+function renderPending(){
+  $('#pendingFiles').innerHTML=pendingFiles.map((f,i)=>`<div class="pf">📎 ${f.name} <span class="x" data-i="${i}">✕</span></div>`).join('');
+  document.querySelectorAll('.pf .x').forEach(x=>x.addEventListener('click',()=>{pendingFiles.splice(+x.dataset.i,1);renderPending();}));
+  syncChips();
+}
+function addFiles(files){
+  for(const f of files)pendingFiles.push({name:f.name,size:f.size});
+  renderPending();
+}
+$('#attachBtn').addEventListener('click',()=>{
+  const inp=document.createElement('input');inp.type='file';inp.multiple=true;
+  inp.onchange=()=>addFiles(inp.files);inp.click();
+});
+const box=$('#composerBox'),tip=$('#dragTip');
+['dragenter','dragover'].forEach(ev=>document.addEventListener(ev,e=>{e.preventDefault();tip.classList.add('show');}));
+['dragleave','drop'].forEach(ev=>document.addEventListener(ev,e=>{e.preventDefault();if(e.target===tip||ev==='drop')tip.classList.remove('show');}));
+document.addEventListener('drop',e=>{e.preventDefault();tip.classList.remove('show');if(e.dataTransfer&&e.dataTransfer.files.length)addFiles(e.dataTransfer.files);});
+
+/* ══ 个人中心子页切换 ══ */
+document.querySelectorAll('.me-nav button').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('.me-nav button').forEach(x=>x.classList.remove('active'));b.classList.add('active');
+  ['agent','workspace','memory','logs'].forEach(k=>$('#me-'+k).classList.toggle('hidden',k!==b.dataset.me));
+}));
+
+/* ══ 模型渠道管理 ══ */
+const PROVIDERS={'OpenRouter':'🌐','DeepSeek':'🔷','Kimi':'🌙','Anthropic':'🅰️','自定义OpenAI兼容':'⚙️'};
+const PROVIDER_MODELS={
+  'OpenRouter':['moonshotai/kimi-k3','anthropic/claude-sonnet-4','deepseek/deepseek-v3','openai/gpt-4o'],
+  'DeepSeek':['deepseek-chat','deepseek-reasoner'],
+  'Kimi':['kimi-k3','kimi-k2','moonshot-v1-128k'],
+  'Anthropic':['claude-sonnet-4','claude-opus-4','claude-haiku-4'],
+  '自定义OpenAI兼容':['（手动填写模型ID）'],
+};
+let CHANNELS=[
+  {id:1,name:'我的 OpenRouter',provider:'OpenRouter',key:'sk-or-v1-************305',model:'moonshotai/kimi-k3',status:'ok',on:true},
+  {id:2,name:'DeepSeek 直连',provider:'DeepSeek',key:'sk-************8f2',model:'deepseek-chat',status:'fail',on:false},
+];
+let nextChId=3, activeChannelId=1;
+function renderChannels(){
+  $('#channelList').innerHTML=CHANNELS.map(c=>`
+  <div class="channel ${c.on?'on':''} ${c._expanded?'expanded':''}" data-id="${c.id}">
+    <div class="ch-head" data-act="toggle">
+      <div class="ci">${PROVIDERS[c.provider]||'🔌'}</div>
+      <div class="ct"><div class="cn">${c.name}</div><div class="cs">${c.provider} · ${c.model}</div></div>
+      <div class="cstat ${c.status}">${c.status==='ok'?'● 已连通':c.status==='fail'?'● 未连通':'○ 未测试'}</div>
+      <button class="toggle ${c.on?'on':''}" data-act="switch" title="启用/停用"></button>
+      <span class="caret">▶</span>
+    </div>
+    <div class="ch-body">
+      <div class="ch-row"><div class="k">渠道名称</div><input type="text" value="${c.name}" data-f="name"></div>
+      <div class="ch-row"><div class="k">服务商</div>
+        <select data-f="provider">${Object.keys(PROVIDERS).map(p=>`<option ${p===c.provider?'selected':''}>${p}</option>`).join('')}</select></div>
+      <div class="ch-row"><div class="k">API Key</div><input type="password" value="${c.key}" data-f="key" placeholder="sk-..."></div>
+      <div class="ch-row"><div class="k">模型</div>
+        <select data-f="model">${(PROVIDER_MODELS[c.provider]||[]).map(m=>`<option ${m===c.model?'selected':''}>${m}</option>`).join('')}</select></div>
+      <div class="ch-actions">
+        <button class="btn sm primary" data-act="test">⚡ 测试连通性</button>
+        <button class="btn sm" data-act="save">保存</button>
+        <button class="btn sm ghost" data-act="del">删除</button>
+        <span class="result ${c.status}" data-result>${c.status==='ok'?'✓ 上次测试通过':c.status==='fail'?'✗ 连接失败，请检查 Key':''}</span>
+      </div>
+    </div>
+  </div>`).join('');
+  renderChatModelSelect();
+}
+function renderChatModelSelect(){
+  const on=CHANNELS.filter(c=>c.on);
+  const sel=$('#chatModelSelect');
+  if(on.length===0){
+    sel.innerHTML='<option>团队公共模型（兜底）</option>';
+    $('#chatModelHint').textContent='未配置个人渠道，使用团队公共 Key';
+    return;
+  }
+  sel.innerHTML=on.map(c=>`<option value="${c.id}" ${c.id===activeChannelId?'selected':''}>${c.provider} · ${c.model}</option>`).join('');
+  $('#chatModelHint').textContent='';
+}
+$('#channelList').addEventListener('click',e=>{
+  const chEl=e.target.closest('.channel');if(!chEl)return;
+  const id=+chEl.dataset.id, c=CHANNELS.find(x=>x.id===id), act=e.target.dataset.act;
+  if(act==='switch'){e.stopPropagation();c.on=!c.on;if(c.on)activeChannelId=id;renderChannels();return;}
+  if(act==='test'){
+    const res=chEl.querySelector('[data-result]');res.className='result testing';res.textContent='⏳ 测试中…';
+    setTimeout(()=>{c.status=Math.random()>0.25?'ok':'fail';renderChannels();},900);return;
+  }
+  if(act==='save'){renderChannels();return;}
+  if(act==='del'){CHANNELS=CHANNELS.filter(x=>x.id!==id);renderChannels();return;}
+  if(act==='toggle'||e.target.closest('.ch-head')){c._expanded=!c._expanded;renderChannels();}
+});
+$('#channelList').addEventListener('change',e=>{
+  const chEl=e.target.closest('.channel');if(!chEl)return;
+  const id=+chEl.dataset.id, c=CHANNELS.find(x=>x.id===id), f=e.target.dataset.f;
+  if(!f)return; c[f]=e.target.value;
+  if(f==='provider'){c.model=(PROVIDER_MODELS[c.provider]||[])[0];renderChannels();}
+});
+$('#addChannelBtn').addEventListener('click',()=>{
+  CHANNELS.push({id:nextChId++,name:'新渠道',provider:'OpenRouter',key:'',model:PROVIDER_MODELS['OpenRouter'][0],status:'idle',on:false,_expanded:true});
+  renderChannels();
+});
+$('#chatModelSelect').addEventListener('change',e=>{activeChannelId=+e.target.value;});
+renderChannels();
+/* 设备环境列表 */
+function envName(id){const e=ENVS.find(x=>x.env===id);return e?e.name+'('+id+')':id;}
+$('#envList').innerHTML=ENVS.map(e=>`
+ <div class="mem-item"><span style="font-size:18px">${e.icon}</span>
+  <div class="mt"><b>${e.name}</b> <span style="font-family:monospace;font-size:11px;color:var(--ink-3);margin-left:6px">env:${e.env}</span>
+   <div class="md">${e.online?'🟢 在线 — agent 可实时读取该设备的工作库':'⚪ 离线 — 读不到时可走 git 降级（若已配置）'}</div></div>
+  <div class="ma"><button title="重命名">✏️</button><button title="移除">🗑</button></div></div>`).join('');
+/* 工作库表格 */
+$('#wsTable').innerHTML=WORKSPACES.map(w=>`<tr style="cursor:default">
+ <td style="font-weight:600">${w.n}</td>
+ <td style="color:var(--ink-3);font-family:monospace;font-size:11px">${w.local}</td>
+ <td>${envName(w.env)}</td>
+ <td style="font-size:11px">${w.git?`<span style="font-family:monospace;color:var(--ink-2)">${w.git}</span>`:'<span style="color:var(--ink-3)">未配置</span>'}</td>
+ <td>${tag('✓ '+w.files+'个文件','green')}<div style="font-size:10px;color:var(--ink-3);margin-top:2px">${w.synced}</div></td>
+ <td><button class="btn sm ghost">同步索引</button><button class="btn sm ghost">编辑</button></td></tr>`).join('');
+$('#uploadList').innerHTML=UPLOADS.map(u=>`<div class="attach-card" style="margin-bottom:8px"><span class="ai">📄</span><span class="an">${u.n}</span><span class="as">${u.s} · ${u.t}</span></div>`).join('');
+/* Memory 列表 */
+$('#memList').innerHTML=MEMS.map(m=>`<div class="mem-item"><span style="font-size:16px">🧠</span><div class="mt">${m.t}<div class="md">${m.d}</div></div><div class="ma"><button>✏️</button><button>🗑</button></div></div>`).join('');
+/* 日志 */
+$('#logBox').innerHTML=LOGS.map(([cls,t,msg])=>`<div><span class="lt">${t}</span> <span class="${cls}">${msg}</span></div>`).join('');
+
+/* ══ 角色切换 ══ */
+function setRole(isAdmin){
+  document.querySelectorAll('.admin-only').forEach(el=>el.style.display=isAdmin?'':'none');
+  $('#chipName').textContent=isAdmin?'guanjie':'zhangsan';
+  $('#chipRole').textContent=isAdmin?'管理员':'成员';
+  $('#avatarEl').textContent=isAdmin?'管':'张';
+  $('#btnAdmin').classList.toggle('on',isAdmin);
+  $('#btnMember').classList.toggle('on',!isAdmin);
+  if(!isAdmin&&['review','members'].includes(currentView()))show('chat');
+}
+function currentView(){for(const[k,v]of Object.entries(views))if(!$(v).classList.contains('hidden'))return k;return'chat';}
+$('#btnAdmin').onclick=()=>setRole(true);
+$('#btnMember').onclick=()=>setRole(false);
+setRole(true);
+show('chat');  // 登录后默认对话页
+</script>
+</body>
+</html>

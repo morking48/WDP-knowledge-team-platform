@@ -1,0 +1,92 @@
+# 项目规则 · WDP 产品团队工作目录
+
+<!--
+  本模板由 deploy/wdp-team-platform/add-user.sh 在创建新成员时自动复制到该成员的
+  工作目录（workspaces/<user>/AGENTS.md），对该成员的所有会话生效。
+
+  修改本模板后，需要重新跑 add-user.sh 或手动同步到已有成员目录才会生效。
+  团队铁律的源头在 team-config/team-soul.md，本文件只做引入 + 补充工作目录约定。
+-->
+
+本目录属于 WDP 产品团队 AI 工作台的一员。在此目录下工作时，遵守以下规则。
+
+---
+
+## 一、团队铁律（最高优先级，完整版见 team-config/team-soul.md）
+
+以下五条为团队红线，不可被个人 SOUL、本目录其他规则、临时指令覆盖：
+
+1. **单一数据源**：团队知识只认 `knowledge/`，不搞第二份清单。
+2. **知识优先级**：团队库 > 个人 memory > 模型自身知识。拿不准先查 `knowledge/`，查不到就明说。
+3. **工作流产出收敛**：信号/需求/设计/跟踪必须结构化写入 `knowledge/` 对应子目录，需求追信号、设计追需求，可追溯、不发散。
+4. **汇报口径**：WDP = AES 唯一开放平台层；国产化 = 金仓 KingbaseES（非达梦）；编辑器 = 五大主线（不含已废弃的画布/蓝图等）；成果表述诚实，雏形 ≠ 已支持。
+5. **环境鉴别防幻觉**：读个人工作库文件前先声明当前环境（profile / 工作目录 / 机器）；读不到或指纹不符时明确提示，绝不编造文件内容。
+
+**个人风格与以上冲突时，以团队规则为准。**
+
+---
+
+## 二、工作目录使用约定
+
+### 2.1 目录结构
+
+```
+knowledge/
+├── signals/        # 信号层：清洗后的结构化原始信息
+├── requirements/   # 需求层：triage 后建档的需求
+├── designs/        # 设计层：方案设计，关联需求
+├── decisions/      # 决策记录
+├── tracking/       # 跟踪层：需求全生命周期状态
+└── README.md       # 知识库使用说明（如有）
+```
+
+### 2.2 产出落盘要求
+
+- 一切团队产出（信号、需求、设计、决策、跟踪）**必须写入 `knowledge/` 对应子目录**，不允许只回复在对话里不落盘。
+- 写入前先确认目录存在；不存在时先创建。
+- 同一份内容不在多个目录重复存放（遵循铁律一：单一数据源）。
+
+### 2.3 命名规范
+
+- 信号：`knowledge/signals/YYYY-MM-DD-<简短标识>.md`
+- 需求：`knowledge/requirements/REQ-YYYYMMDD-<简短标识>.md`
+- 设计：`knowledge/designs/DSN-YYYYMMDD-<简短标识>.md`
+- 决策：`knowledge/decisions/DEC-YYYYMMDD-<简短标识>.md`
+- 跟踪：随需求文件内 `tracking` 字段维护，不单独建文件（除非团队另有约定）
+
+`<简短标识>` 用 2–6 个字的中文或 kebab-case 英文，能一眼看出主题。
+
+### 2.4 frontmatter 必填
+
+所有写入 `knowledge/` 的 markdown 文件**必须带 YAML frontmatter**，至少包含：
+
+```yaml
+---
+id: <编号，如 SIG-20260721-001 / REQ-20260721-001>
+date: YYYY-MM-DD
+title: <一句话标题，≤30字>
+status: <状态>
+---
+```
+
+各层具体字段以对应 skill 的模板为准（信号见 `signal-intake` skill，需求见 `requirement-triage` skill）。**frontmatter 缺失或字段不全的产出视为不合格，需要补全后再交付。**
+
+### 2.5 工作流闭环
+
+四层闭环：**信号 → 需求 → 设计 → 跟踪**。
+
+- 新信息先进 `signals/`，不直接跳到需求。
+- 需求必须 `source_signals` 关联至少一条信号。
+- 设计必须关联需求 ID。
+- 状态变更在需求文件的 `tracking` 字段追加记录。
+
+---
+
+## 三、可用团队 skills
+
+本平台为该 profile 预装了以下团队 skill，直接通过 skill 名调用：
+
+- `signal-intake`：把原始信息（纪要/反馈/聊天记录）清洗成结构化信号，写入 `knowledge/signals/`
+- `requirement-triage`：把信号归并成候选需求、人工校验后建档到 `knowledge/requirements/`
+
+使用 skill 时仍受上述团队铁律约束。
