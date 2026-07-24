@@ -123,9 +123,10 @@ const TITLES = {
   review:['决策中心','入库审核与归并决策'],
   members:['成员管理','账号与权限'],
   teamagent:['团队 Agent','团队规则 · 默认模型 · 归并规则 · 定时任务'],
+  teammembers:['团队成员','产研团队档案与能力画像'],
   me:['个人中心','配置你的 agent 与空间']
 };
-const VIEWS = {chat:'#viewChat',board:'#viewBoard',review:'#viewReview',members:'#viewMembers',teamagent:'#viewTeamAgent',me:'#viewMe'};
+const VIEWS = {chat:'#viewChat',board:'#viewBoard',review:'#viewReview',members:'#viewMembers',teamagent:'#viewTeamAgent',teammembers:'#viewTeamMembers',me:'#viewMe'};
 const LOADED = {};
 
 function show(v){
@@ -137,9 +138,10 @@ function show(v){
   if($('#pageCrumb')) $('#pageCrumb').textContent = c;
   // 懒加载
   if(v==='board' && !LOADED.board){ loadWorkbench(); LOADED.board=true; }
-  else if(v==='review' && !LOADED.review){ if(window.loadReview) window.loadReview(); LOADED.review=true; }
+  else if(v==='review'){ if(window.loadReview) window.loadReview(); LOADED.review=true; }  // #4：每次进入都拉最新待审（不做一次性懒加载，保证提交后即时可见）
   else if(v==='members' && !LOADED.members){ if(window.loadMembers) window.loadMembers(); LOADED.members=true; }
   else if(v==='teamagent' && !LOADED.teamagent){ if(window.loadTeamAgent) window.loadTeamAgent(); LOADED.teamagent=true; }
+  else if(v==='teammembers' && !LOADED.teammembers){ if(window.wbLoadTeam) window.wbLoadTeam(); LOADED.teammembers=true; }
   else if(v==='me' && !LOADED.me){ if(window.loadMe) window.loadMe(); LOADED.me=true; }
   else if(v==='chat' && !LOADED.chat){ if(window.loadChat) window.loadChat(); LOADED.chat=true; }
   // 2c修复：切回对话视图时，若当前会话正在流式，刷新思考态渲染+置灰态（防切走期间状态丢失）
@@ -164,15 +166,13 @@ function bindWorkbenchTabs(){
   $$('#viewBoard .tab').forEach(t => t.addEventListener('click', ()=>{
     $$('#viewBoard .tab').forEach(x=>x.classList.remove('active'));
     t.classList.add('active');
-    ['signals','requirements','designs','decisions','mine','team','library'].forEach(k =>{
+    ['signals','requirements','designs','decisions','mine','library'].forEach(k =>{
       const el = $('#tab-'+k); if(el) el.classList.toggle('hidden', k!==t.dataset.tab);
     });
     // 懒加载 library（决策已并入需求，不再独立 tab）
     if(t.dataset.tab==='library' && window.wbLoadLibrary) window.wbLoadLibrary();
     // #2：我的工作项 tab
     if(t.dataset.tab==='mine' && window.wbLoadMine) window.wbLoadMine();
-    // 团队成员 tab
-    if(t.dataset.tab==='team' && window.wbLoadTeam) window.wbLoadTeam();
   }));
 }
 

@@ -363,8 +363,8 @@ async function loadChatWorkspaceList(){
     try{
       await api('/api/me/workspaces/activate', {method:'POST', body:JSON.stringify({id:wid})});
       if(window.__wb) window.__wb.toast('已切换对话工作库（新对话生效）');
-      // R30：切换工作库后重置当前会话，下一条消息用新工作库创建session
-      activeSid = null;
+      // #2修复：不再清 activeSid！之前这里清空导致"在已有卡片输入却跳到新会话"（丢历史）。
+      // 新工作库只对下一个【新建】对话生效（session/new 时读 active_workspace），当前对话不受影响。
       loadChatWorkspaceList();
     }catch(e){ if(window.__wb) window.__wb.toast('切换失败：'+e.message, true); }
   }));
@@ -424,7 +424,7 @@ async function pickWorkspaceFromList(){
   try{
     await api('/api/me/workspaces/activate', {method:'POST', body:JSON.stringify({id:form.wid})});
     if(window.__wb) window.__wb.toast('已切换对话工作库（新对话生效）');
-    activeSid = null;
+    // #2修复：同上，不清 activeSid，当前对话继续，新工作库对下一个新对话生效
     loadChatWorkspaceList();
   }catch(e){ if(window.__wb) window.__wb.toast('切换失败：'+e.message, true); }
 }
@@ -624,6 +624,17 @@ async function doSend(){
 
   try{
     // 1. 若无 session，先创建（新建对话场景；已有会话直接复用 activeSid）
+    // #2防御：activeSid 为空但转录区已有多条历史消息且非草稿态 → 状态被意外清空，
+    // 拒绝静默新建（那会丢上下文），提示用户重新选卡片。
+    if(!activeSid && !wasDraft){
+      const trEl = document.getElementById('transcript');
+      const histCnt = trEl ? trEl.querySelectorAll('.cmsg').length : 0;
+      if(histCnt > 2){
+        toast('会话状态异常（当前对话标识丢失），请点击左侧对话卡片重新进入后再发送', true);
+        setComposerBusy(false);
+        return;
+      }
+    }
     if(!activeSid){
       let wsPath = null;
       try{

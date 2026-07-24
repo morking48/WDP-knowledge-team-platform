@@ -5850,12 +5850,14 @@ def handle_post(handler, parsed) -> bool:
         except ValueError as e:
             return bad(handler, str(e), 400)
         # 同步创建同名 profile 目录（隔离的 HERMES_HOME）
+        # ⚠️ 必须 clone_config=True 从团队根克隆 config.yaml/.env（团队默认模型+Key），
+        #    否则新成员 profile 无模型配置 → 对话 400（liyongqiang 实测踩坑）
         profile_created = False
         try:
             from api.profiles import create_profile_api
             existing = {p.get('name') for p in __import__('api.profiles', fromlist=['list_profiles_api']).list_profiles_api()}
             if rec['profile'] not in existing:
-                create_profile_api(rec['profile'])
+                create_profile_api(rec['profile'], clone_from='default', clone_config=True)
                 profile_created = True
         except Exception as e:
             logger.warning("创建 profile %s 失败（用户已建）: %s", rec['profile'], e)

@@ -606,6 +606,22 @@ async function refreshNotifBadge(){
     } else {
       badge.style.display = 'none';
     }
+    // #4：admin 顺带刷新决策中心待审角标（30s 轮询共用，不加新请求循环）；
+    // 若当前正停留在决策中心页，同步刷新待审列表（提交后无需手动刷新页面）
+    if(window.__wb && window.__wb.IS_ADMIN){
+      try{
+        const rv = await api('/api/review/list');
+        const n = (rv.items||[]).length;
+        const rc = document.getElementById('railReviewCnt');
+        if(rc){ if(n>0){ rc.textContent=n; rc.style.display=''; } else { rc.style.display='none'; } }
+        const reviewVisible = document.getElementById('viewReview') && !document.getElementById('viewReview').classList.contains('hidden');
+        if(reviewVisible && window.loadReview){
+          const listEl = document.getElementById('reviewList');
+          const shown = listEl ? listEl.querySelectorAll('.review-item').length : 0;
+          if(n !== shown) window.loadReview();   // 数量变化才重绘，避免打断正在看的详情
+        }
+      }catch(_){}
+    }
   }catch(_){}
 }
 

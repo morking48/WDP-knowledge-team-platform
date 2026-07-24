@@ -129,6 +129,7 @@ def clean_users():
 
 def clean_knowledge():
     # 业务数据清空
+    # team/ 是长期知识（成员档案+能力画像），与 library 同级待遇，不参与重置
     for cat in ('signals', 'requirements', 'designs', 'decisions', 'tracking'):
         d = os.path.join(KB, cat)
         if os.path.isdir(d):
