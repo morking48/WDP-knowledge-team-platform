@@ -57,14 +57,28 @@ def _scan_dir(base: Path, scope: str, enabled: bool = True) -> list:
 
 
 def _team_skill_dirs() -> list:
-    """团队 skill 目录（只读展示）。"""
+    """团队 skill 目录（只读展示）。
+
+    部署适配（按优先级）：
+      1. WDP_TEAM_SKILLS_DIR 环境变量（K8s 部署显式指定，可逗号分隔多个）
+      2. 本地开发：HERMES_HOME 上一级的工程 skills/ + HERMES_HOME/skills/wdp-team
+      3. 容器兜底：/opt/hermes-team-skills（Dockerfile COPY team-config/skills 到此）
+    """
     import os
     dirs = []
-    home = os.getenv('HERMES_HOME', '').strip()
-    if home:
-        root = Path(home).parent            # 工程根
-        dirs.append(root / 'skills')        # 工程团队工作 skill
-        dirs.append(Path(home) / 'skills' / 'wdp-team')  # 团队专属 skill
+    env_dirs = os.getenv('WDP_TEAM_SKILLS_DIR', '').strip()
+    if env_dirs:
+        for p in env_dirs.split(','):
+            p = p.strip()
+            if p:
+                dirs.append(Path(p))
+    else:
+        home = os.getenv('HERMES_HOME', '').strip()
+        if home:
+            root = Path(home).parent            # 本地：工程根
+            dirs.append(root / 'skills')        # 工程团队工作 skill
+            dirs.append(Path(home) / 'skills' / 'wdp-team')  # 团队专属 skill
+        dirs.append(Path('/opt/hermes-team-skills'))  # 容器镜像内置兜底
     return [d for d in dirs if d.is_dir()]
 
 

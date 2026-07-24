@@ -144,6 +144,15 @@ COPY --chown=root:root agent-src/ /opt/hermes
 # -----------------------------------------------------------------------------
 COPY --chown=root:root deploy/wdp-team-platform/webui-overlay/ /apptoo/
 
+# 7) 团队 skills（个人中心"团队技能"只读展示 + agent 加载）→ 镜像内置
+COPY --chown=root:root deploy/wdp-team-platform/team-config/skills/ /opt/hermes-team-skills/
+
+# 8) agent 提交/画像/个人skill 沉淀脚本 → 镜像内置（启动脚本会同步到 PVC 的 hermes-home/scripts/）
+COPY --chown=root:root deploy/wdp-team-platform/scripts/submit_review.py \
+     deploy/wdp-team-platform/scripts/update_member_profile.py \
+     deploy/wdp-team-platform/scripts/save_personal_skill.py \
+     /opt/wdp-scripts/
+
 # -----------------------------------------------------------------------------
 # 7) 运行时环境变量默认值（可被 docker run -e 覆盖）
 # -----------------------------------------------------------------------------

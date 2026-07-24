@@ -77,8 +77,12 @@ spec:
               value: "/data/profiles/default/webui"
             # ---- 团队知识库路径 ----
             # WebUI 和 Agent 会读取此目录下的共享知识/技能
-            - name: HERMES_TEAM_KNOWLEDGE_DIR
+            - name: HERMES_KNOWLEDGE_DIR    # ⚠️ 代码读的是这个名字（api/knowledge.py 等 7 处）
               value: "/data/knowledge"
+            - name: WDP_TEAM_SKILLS_DIR     # 个人中心"团队技能"只读展示源（镜像内置）
+              value: "/opt/hermes-team-skills"
+            - name: WDP_SCHEDULER_ENABLED   # 定时任务单点执行：仅主副本设 1，多副本时其余设 0
+              value: "1"
             # ---- 可选：跳过权限修复（共享卷场景下避免冲突）----
             - name: HERMES_SKIP_CHMOD
               value: "1"
