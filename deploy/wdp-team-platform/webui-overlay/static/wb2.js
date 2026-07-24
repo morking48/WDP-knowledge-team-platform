@@ -247,7 +247,7 @@ window.bindMeNav = function(){
   $$('.me-nav button').forEach(b => b.addEventListener('click', ()=>{
     $$('.me-nav button').forEach(x=>x.classList.remove('active'));
     b.classList.add('active');
-    ['agent','team','workspace','memory','logs'].forEach(k => { const el=$('#me-'+k); if(el) el.classList.toggle('hidden', k!==b.dataset.me); });
+    ['agent','skills','team','workspace','memory','logs'].forEach(k => { const el=$('#me-'+k); if(el) el.classList.toggle('hidden', k!==b.dataset.me); });
     loadMeSub(b.dataset.me);
   }));
 };
@@ -259,6 +259,7 @@ async function loadMeSub(which){
   if(_meLoaded[which]) return;
   try{
     if(which==='agent') await loadMeAgent();
+    else if(which==='skills') await loadMeSkills();
     else if(which==='workspace') await loadMeWorkspace();
     else if(which==='memory') await loadMeMemory();
     else if(which==='logs') await loadMeLogs();
@@ -347,6 +348,45 @@ window.loadTeamAgent = async function(){
   // 定时任务（从成员管理迁入）
   if(window.wbLoadTasks) window.wbLoadTasks();
 };
+
+// ── 技能页（团队只读 + 个人可开关/删除）──
+async function loadMeSkills(){
+  const teamBox = $('#teamSkillList');
+  const persBox = $('#personalSkillList');
+  if(teamBox) teamBox.innerHTML = '<div style="color:var(--ink-3);font-size:13px">加载中…</div>';
+  let d;
+  try{ d = await api('/api/me/skills'); }
+  catch(e){ if(teamBox) teamBox.innerHTML = `<div style="color:var(--danger)">加载失败：${h(e.message)}</div>`; return; }
+  const card = (s, actions) => `<div style="display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--line-2);border-radius:10px;margin-bottom:8px;background:rgba(255,255,255,.55)">
+    <div style="flex:1;min-width:0">
+      <div style="font-weight:600">${h(s.name)}${s.enabled===false?' <span class="tag gray" style="font-size:10px">已停用</span>':''}</div>
+      <div style="font-size:12px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h(s.description||'（无描述）')}</div>
+    </div>${actions||''}</div>`;
+  // 团队技能（只读）
+  const team = d.team || [];
+  if(teamBox) teamBox.innerHTML = team.length ? team.map(s=>card(s,'<span class="tag green" style="font-size:10px">团队</span>')).join('')
+    : '<div style="color:var(--ink-3);font-size:13px">暂无团队技能</div>';
+  // 个人技能（开关 + 删除）
+  const pers = d.personal || [];
+  if(persBox){
+    persBox.innerHTML = pers.length ? pers.map(s=>card(s,
+      `<button class="toggle ${s.enabled?'on':''}" data-sk="${h(s.name)}" data-en="${s.enabled?1:0}" data-act="sktoggle" title="启用/停用"></button>
+       <button class="btn sm ghost" data-sk="${h(s.name)}" data-act="skdel" style="color:var(--danger)">删除</button>`)).join('')
+      : '<div style="color:var(--ink-3);font-size:13px;line-height:1.7">还没有个人技能。<br>在对话中让 agent 帮你把反复用的工作方法「沉淀成技能」，就会出现在这里。</div>';
+    persBox.querySelectorAll('[data-act="sktoggle"]').forEach(b=>b.addEventListener('click', async ()=>{
+      const en = b.dataset.en !== '1';
+      try{ await api('/api/me/skills/toggle',{method:'POST',body:JSON.stringify({name:b.dataset.sk, enabled:en})});
+        toast(en?'已启用（下次对话生效）':'已停用（下次对话生效）'); _meLoaded.skills=false; loadMeSkills();
+      }catch(e){ toast('操作失败：'+e.message, true); }
+    }));
+    persBox.querySelectorAll('[data-act="skdel"]').forEach(b=>b.addEventListener('click', async ()=>{
+      if(!(await wbConfirm('删除个人技能「'+b.dataset.sk+'」？不可恢复。'))) return;
+      try{ await api('/api/me/skills/delete',{method:'POST',body:JSON.stringify({name:b.dataset.sk})});
+        toast('已删除'); _meLoaded.skills=false; loadMeSkills();
+      }catch(e){ toast('删除失败：'+e.message, true); }
+    }));
+  }
+}
 
 async function loadMeAgent(){
   const d = await api('/api/me/agent');

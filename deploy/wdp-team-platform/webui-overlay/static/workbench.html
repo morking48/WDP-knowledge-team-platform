@@ -295,6 +295,7 @@
       <div class="me-grid">
         <div class="me-nav panel" style="padding:12px">
           <button class="active" data-me="agent"><span class="ic">🤖</span>我的 Agent</button>
+          <button data-me="skills"><span class="ic">🧩</span>技能</button>
           <button data-me="workspace"><span class="ic">📁</span>个人工作库</button>
           <button data-me="memory"><span class="ic">🧠</span>个人 Memory</button>
           <button data-me="logs"><span class="ic">📜</span>运行日志</button>
@@ -345,6 +346,18 @@
           </div>
 
           <!-- 团队 Agent 已升级为一级模块（rail「团队 Agent」），此处不再重复 -->
+
+          <!-- 技能（团队只读 + 个人可开关） -->
+          <div id="me-skills" class="hidden">
+            <div class="panel" style="margin-bottom:16px">
+              <div class="panel-head"><h2>🧩 团队技能</h2><span class="hint">团队统一方法论，所有成员共享，只读</span></div>
+              <div class="panel-body" id="teamSkillList" style="padding:14px 16px"></div>
+            </div>
+            <div class="panel">
+              <div class="panel-head"><h2>🧩 我的技能</h2><span class="hint">对话中由 agent 协助沉淀，可开关/删除</span></div>
+              <div class="panel-body" id="personalSkillList" style="padding:14px 16px"></div>
+            </div>
+          </div>
 
           <!-- 个人工作库（环境 + 目录管理） -->
           <div id="me-workspace" class="hidden">

@@ -5353,6 +5353,9 @@ def handle_get(handler, parsed) -> bool:
             res = _ta.get_team_rules_readonly()
         elif sub == "workspace":
             res = _me.handle_me_workspace(handler, parsed)
+        elif sub == "skills":
+            from api import me_skills as _msk
+            res = _msk.list_skills(handler)
         elif sub == "memory":
             res = _me.handle_me_memory(handler, parsed)
         elif sub == "logs":
@@ -5947,6 +5950,26 @@ def handle_post(handler, parsed) -> bool:
         return j(handler, res)
 
     # ── 个人中心补全：模型渠道 + 设备/工作库登记 ─────────────────────
+    if parsed.path.startswith("/api/me/skills/"):
+        from api import me_skills as _msk
+        from api import users as _users
+        if _users.multiuser_enabled() and not _users.current_request_user(handler):
+            return j(handler, {"error": "未登录"}, status=401)
+        p = parsed.path
+        try:
+            if p == "/api/me/skills/toggle":
+                res = _msk.toggle_skill(handler, body.get("name") or "", bool(body.get("enabled")))
+            elif p == "/api/me/skills/delete":
+                res = _msk.delete_skill(handler, body.get("name") or "")
+            else:
+                return j(handler, {"error": "未知子路径"}, status=404)
+        except Exception as e:
+            return j(handler, {"error": str(e)}, status=500)
+        if isinstance(res, tuple):
+            body2, code = res
+            return j(handler, body2, status=code)
+        return j(handler, res)
+
     if parsed.path.startswith("/api/me/channels/") or parsed.path.startswith("/api/me/devices/") or parsed.path.startswith("/api/me/workspaces/"):
         from api import channels as _ch
         from api import users as _users
