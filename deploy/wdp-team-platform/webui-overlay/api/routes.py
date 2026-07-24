@@ -5887,6 +5887,14 @@ def handle_post(handler, parsed) -> bool:
         _users.logout_user(username)
         return j(handler, {"ok": True})
 
+    if parsed.path == "/api/admin/users/responsibilities":
+        from api import users as _users
+        if not _users.is_request_admin(handler):
+            return j(handler, {"error": "需要管理员权限"}, status=403)
+        username = (body.get("username") or "").strip()
+        ok = _users.set_responsibilities(username, body.get("text") or "")
+        return j(handler, {"ok": ok})
+
     # ── WDP 团队工作台 R3：入库审核（POST 部分）────────────────────────
     if parsed.path == "/api/review/submit":
         from api import review as _rv
@@ -5993,6 +6001,13 @@ def handle_post(handler, parsed) -> bool:
                 res = _ta.save_team_soul(body.get("soul") or "")
             elif p == "/api/admin/team-agent/publish":
                 res = _ta.publish_team_rules()
+            elif p == "/api/admin/team-agent/apply-rules":
+                # 规则 agent 产出的 soul → 写母本 + 一键发布到成员
+                _save = _ta.save_team_soul(body.get("soul") or "")
+                if isinstance(_save, tuple):
+                    res = _save
+                else:
+                    res = _ta.publish_team_rules()
             elif p == "/api/admin/team-agent/model":
                 res = _ta.save_team_model(body.get("provider") or "", body.get("model") or "")
             elif p == "/api/admin/team-agent/merge-rule":

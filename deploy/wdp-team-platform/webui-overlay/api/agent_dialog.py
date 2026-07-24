@@ -173,31 +173,82 @@ def _review_system_prompt(ref: dict) -> str:
 ## 现有知识库条目（查重参考）
 {chr(10).join(existing[:50])}
 
+## 团队成员职责（分配建议依据）
+{_roster_block()}
+
 ## 对话规则（重要）
-- 管理员会和你讨论这条申请（质量如何/是否重复/该归哪类/要不要驳回），你的分析要具体、基于内容。
+- 管理员会和你讨论这条申请（质量如何/是否重复/该归哪类/要不要驳回/该派给谁），你的分析要具体、基于内容。
+- **若这条申请适合沉淀为需求或需要跟进，请对照上面成员职责给出「建议负责人」并说明理由**（谁的职责域最匹配）。
 - **每当你的审核建议有更新（首轮必须），在回复末尾输出 ```proposal 代码块**：
 ```proposal
-{{"suggested_category": "signals/requirements/designs/decisions", "duplicate_risk": "无/低/中/高", "duplicate_of": "疑似重复的条目id或空串", "quality_notes": "质量简评", "recommendation": "通过/建议修订后通过/建议驳回", "reason": "一句话理由", "suggested_reject_reason": "若建议驳回,给出发给提交人的驳回理由,否则空串"}}
+{{"suggested_category": "signals/requirements/designs/decisions", "duplicate_risk": "无/低/中/高", "duplicate_of": "疑似重复的条目id或空串", "quality_notes": "质量简评", "recommendation": "通过/建议修订后通过/建议驳回", "reason": "一句话理由", "suggested_owner": "建议负责人用户名或空串", "suggested_reject_reason": "若建议驳回,给出发给提交人的驳回理由,否则空串"}}
 ```
 - proposal 块外用简洁中文回应管理员，不重复方案内容。"""
+
+
+def _roster_block() -> str:
+    """团队职责花名册文本块（供审核/规则 agent 注入）。"""
+    try:
+        from api import users as _u
+        roster = _u.team_roster()
+    except Exception:
+        return '（暂无成员职责登记）'
+    lines = []
+    for m in roster:
+        resp = m.get('responsibilities') or '（未登记职责）'
+        lines.append(f"- {m['username']}（{m.get('role','member')}）：{resp}")
+    return '\n'.join(lines) if lines else '（暂无成员职责登记）'
+
+
+def _rules_system_prompt() -> str:
+    """团队规则 agent：和管理员对话共创/优化团队 SOUL（团队规则母本）。"""
+    from api import team_agent as _ta
+    cur = ''
+    try:
+        cur = _ta.get_team_agent().get('soul', '') or ''
+    except Exception:
+        pass
+    return f"""你是 WDP 产品团队的「团队规则助手」，和管理员对话协作编写/优化团队规则（团队 SOUL）。
+团队规则是所有成员 AI 助手共享的最高优先级人格与铁律，会被发布注入每个成员 agent。
+
+## 当前团队规则全文
+{cur or '（当前为空，尚未设定团队规则）'}
+
+## 你的职责
+- 管理员会提出想强调/新增/修改的规则意图（如"数据口径要诚实""产出必须结构化入库"），你帮他组织成**规范、清晰、可执行**的规则条目。
+- 保持团队规则的整体结构和已有有效内容，做增量优化而非推倒重写（除非管理员明确要求重写）。
+- 规则要面向 AI 助手可执行：讲清"该怎么做/不该怎么做"，避免空泛口号。
+- **每当规则文本有更新（首轮必须），在回复末尾输出 ```proposal 代码块**，内含**完整的新版团队规则全文**：
+```proposal
+{{"soul": "<完整的新版团队规则 Markdown 全文>"}}
+```
+- proposal 块外用简洁中文说明你改了什么、为什么，不要重复粘贴全文。
+- 管理员满意后会点"应用并发布"，届时你的 soul 全文会写入母本并下发成员。"""
 
 
 # ── 接口实现 ────────────────────────────────────────────────────────────────
 
 def start_dialog(kind: str, ref: dict) -> dict:
     _gc()
-    if kind not in ('merge', 'review'):
+    if kind not in ('merge', 'review', 'rules'):
         return {'error': f'未知对话类型 {kind}'}, 400
     try:
-        sys_prompt = _merge_system_prompt() if kind == 'merge' else _review_system_prompt(ref or {})
+        if kind == 'merge':
+            sys_prompt = _merge_system_prompt()
+        elif kind == 'review':
+            sys_prompt = _review_system_prompt(ref or {})
+        else:  # rules
+            sys_prompt = _rules_system_prompt()
     except Exception as e:
         return {'error': f'构建上下文失败: {e}'}, 500
-    first_user = ('请分析当前信号池，给出你的归并方案。' if kind == 'merge'
-                  else '请分析这条入库申请，给出你的审核建议。')
+    first_user = {'merge': '请分析当前信号池，给出你的归并方案。',
+                  'review': '请分析这条入库申请，给出你的审核建议。',
+                  'rules': (ref or {}).get('intent') or '请基于当前团队规则，问我想强调或调整什么，帮我组织成规范条目。'}[kind]
     messages = [{'role': 'system', 'content': sys_prompt},
                 {'role': 'user', 'content': first_user}]
+    _mt = 8000 if kind == 'rules' else 2000   # 规则agent要输出完整SOUL全文，需大额度
     try:
-        raw = _call_llm(messages)
+        raw = _call_llm(messages, max_tokens=_mt)
     except Exception as e:
         logger.warning('agent-dialog start LLM failed: %s', e)
         return {'error': f'agent 分析失败: {e}'}, 500
@@ -222,8 +273,9 @@ def send_dialog(dialog_id: str, message: str) -> dict:
     # 截断：保留 system + 最近 N 条
     if len(d['messages']) > _MAX_TURNS:
         d['messages'] = [d['messages'][0]] + d['messages'][-(_MAX_TURNS - 1):]
+    _mt = 8000 if d.get('kind') == 'rules' else 2000
     try:
-        raw = _call_llm(d['messages'])
+        raw = _call_llm(d['messages'], max_tokens=_mt)
     except Exception as e:
         d['messages'].pop()
         return {'error': f'agent 回复失败: {e}'}, 500

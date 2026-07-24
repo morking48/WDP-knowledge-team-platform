@@ -195,6 +195,7 @@ window.wbOpenReviewDialog = function(item){
         <div style="font-weight:700;color:var(--ink-3);font-size:11px;margin-bottom:2px">🧐 AI 分析（仅供参考，决定权在你）</div>
         <div><b>建议归类：</b>${h(prop.suggested_category||'—')} · <b>重复风险：</b>${h(prop.duplicate_risk||'—')}${prop.duplicate_of?` (疑似与 ${h(prop.duplicate_of)} 重复)`:''}</div>
         <div><b>质量：</b>${h(prop.quality_notes||'—')}</div>
+        ${prop.suggested_owner?`<div><b>建议负责人：</b><span style="color:var(--brand-strong);font-weight:700">${h(prop.suggested_owner)}</span>（按职责匹配）</div>`:''}
         <div><b>AI 倾向：</b><span style="color:${recColor};font-weight:700">${h(prop.recommendation||'—')}</span> — ${h(prop.reason||'')}</div>
         <div style="display:flex;gap:8px;margin-top:8px">
           <button class="ad-exec btn sm primary" data-act="approve">✓ 入库</button>
@@ -221,6 +222,32 @@ window.wbOpenReviewDialog = function(item){
       dlg.el.disabled = true;
       if(window.loadReview) window.loadReview();
       if(window.wbRefreshRailCnt) window.wbRefreshRailCnt();
+    }
+  });
+};
+
+// ── 团队规则 agent 对话（团队 Agent 页「规则助手」）──────────────────────
+window.wbOpenRulesDialog = function(){
+  window.wbAgentDialog({
+    kind: 'rules', icon: '🤖', title: '团队规则助手 · 对话共创',
+    ref: {},
+    executeLabel: '✓ 应用并发布',
+    renderProposal(prop){
+      const soul = prop.soul || '';
+      const preview = soul.length > 600 ? soul.slice(0,600)+'…' : soul;
+      return `<div style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:#fff;font-size:12px;line-height:1.7">
+        <div style="font-weight:700;color:var(--ink-3);font-size:11px;margin-bottom:4px">📋 新版团队规则（预览，应用后写入母本并发布给全体成员）</div>
+        <div style="max-height:220px;overflow-y:auto;white-space:pre-wrap;color:var(--ink);font-size:12px">${h(preview)}</div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="ad-exec btn sm primary" data-act="apply">✓ 应用并发布</button>
+        </div></div>`;
+    },
+    async onExecute(prop, dlg){
+      if(!prop.soul){ dlg.addSys('⚠️ 暂无可应用的规则文本'); return; }
+      const r = await api('/api/admin/team-agent/apply-rules', {method:'POST', body:JSON.stringify({soul: prop.soul})});
+      dlg.addSys(`✅ 已写入团队规则母本并发布（${r.message||'成员 agent 已更新'}）`);
+      // 刷新团队 Agent 页文本框
+      if(window.loadTeamAgent){ if(window.__wb) window.__wb.LOADED.teamagent=false; window.loadTeamAgent(); }
     }
   });
 };

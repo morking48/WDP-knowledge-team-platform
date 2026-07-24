@@ -170,14 +170,17 @@ window.loadMembers = async function(){
       const st = m.stats || {};
       const usage = `${st.sessions||0} 会话`;
       const contrib = `${st.contributions||0} 次入库`;
-      const storage = st.storage_mb!=null ? `${st.storage_mb} MB` : '—';
+      const resp = (m.responsibilities||'').trim();
+      const respCell = resp
+        ? `<span title="${h(resp)}" style="display:inline-block;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle;color:var(--ink-2)">${h(resp)}</span>`
+        : `<span style="color:var(--ink-3)">未定义</span>`;
       return `<tr style="cursor:default">
         <td><div style="display:flex;align-items:center;gap:9px"><span class="oa" style="width:26px;height:26px;font-size:10px">${h((m.username||'?')[0])}</span><b>${h(m.username)}</b>${me?tag('你','green'):''}</div></td>
         <td style="color:var(--ink-3);font-family:monospace;font-size:12px">${h(m.profile)}</td>
         <td>${tag(m.role==='admin'?'管理员':'成员', m.role==='admin'?'purple':'gray')}</td>
+        <td>${respCell} <button class="btn sm ghost" data-act="resp" data-u="${h(m.username)}" data-resp="${h(resp)}" title="编辑职责">✏️</button></td>
         <td style="color:var(--ink-2)">${usage}</td>
         <td style="color:var(--ink-2)">${contrib}</td>
-        <td style="color:var(--ink-3)">${storage}</td>
         <td>${m.active?tag('正常','green'):tag('已停用','red')}</td>
         <td>${me?'<span style="color:var(--ink-3)">—</span>':
           `<button class="btn sm ghost" data-act="reset" data-u="${h(m.username)}">重置密码</button>`+
@@ -226,6 +229,13 @@ async function memberAction(act, username, ds){
       if(!(await wbConfirm('强制 '+username+' 下线？'))) return;
       await api('/api/admin/users/kick', {method:'POST', body:JSON.stringify({username})});
       toast('已踢下线 '+username);
+    }else if(act==='resp'){
+      const cur = ds.resp || '';
+      const txt = await wbPrompt(`「${username}」的职责定义\n（负责的产品方向/模块，主 Agent 据此给出分配建议）：`, {value:cur, multiline:true});
+      if(txt===null) return;
+      await api('/api/admin/users/responsibilities', {method:'POST', body:JSON.stringify({username, text:txt})});
+      toast('已更新 '+username+' 的职责');
+      window.loadMembers();
     }
   }catch(e){ toast('操作失败：'+e.message, true); }
 }
@@ -280,6 +290,8 @@ window.loadTeamAgent = async function(){
     }catch(e){ toast('保存失败：'+e.message, true); }
   };
   // #8：发布——把团队规则同步进每个成员 profile 的 SOUL（幂等块替换）
+  const rulesBtn = $('#rulesAgentBtn');
+  if(rulesBtn) rulesBtn.onclick = ()=>{ if(window.wbOpenRulesDialog) window.wbOpenRulesDialog(); };
   const pubBtn = $('#publishTeamSoulBtn');
   if(pubBtn) pubBtn.onclick = async ()=>{
     if(!(await wbConfirm('发布会把当前团队规则同步到所有成员 agent（覆盖成员 SOUL 中的团队规则块，不动个人个性部分）。确认发布？'))) return;

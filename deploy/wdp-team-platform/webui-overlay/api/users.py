@@ -108,6 +108,7 @@ def list_users(with_stats: bool = False) -> list[dict]:
             'role': u.get('role', ROLE_MEMBER),
             'active': bool(u.get('active', True)),
             'created_at': u.get('created_at'),
+            'responsibilities': u.get('responsibilities', ''),  # 职责定义（分配建议抓手）
         }
         if with_stats:
             try:
@@ -163,6 +164,32 @@ def set_user_active(username: str, active: bool) -> bool:
                 _save_users(users)
                 return True
     return False
+
+
+def set_responsibilities(username: str, text: str) -> bool:
+    """设置成员职责定义（分配建议抓手；主 agent 据此判断需求该派给谁）。"""
+    with _USERS_LOCK:
+        users = _load_users()
+        for u in users:
+            if u.get('username') == username:
+                u['responsibilities'] = (text or '').strip()
+                _save_users(users)
+                return True
+    return False
+
+
+def team_roster() -> list[dict]:
+    """团队职责花名册：给审核/分配 agent 用的精简清单（用户名+角色+职责）。"""
+    out = []
+    for u in _load_users():
+        if not u.get('active', True):
+            continue
+        out.append({
+            'username': u.get('username'),
+            'role': u.get('role', ROLE_MEMBER),
+            'responsibilities': (u.get('responsibilities') or '').strip(),
+        })
+    return out
 
 
 def reset_password(username: str, new_password: str) -> bool:
