@@ -164,13 +164,15 @@ function bindWorkbenchTabs(){
   $$('#viewBoard .tab').forEach(t => t.addEventListener('click', ()=>{
     $$('#viewBoard .tab').forEach(x=>x.classList.remove('active'));
     t.classList.add('active');
-    ['signals','requirements','designs','decisions','mine','library'].forEach(k =>{
+    ['signals','requirements','designs','decisions','mine','team','library'].forEach(k =>{
       const el = $('#tab-'+k); if(el) el.classList.toggle('hidden', k!==t.dataset.tab);
     });
     // 懒加载 library（决策已并入需求，不再独立 tab）
     if(t.dataset.tab==='library' && window.wbLoadLibrary) window.wbLoadLibrary();
     // #2：我的工作项 tab
     if(t.dataset.tab==='mine' && window.wbLoadMine) window.wbLoadMine();
+    // 团队成员 tab
+    if(t.dataset.tab==='team' && window.wbLoadTeam) window.wbLoadTeam();
   }));
 }
 

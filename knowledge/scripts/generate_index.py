@@ -52,7 +52,8 @@ def main():
     sections = []
     flowed = ('已转需求', '已合并', '已归档', '已关闭', '已废弃')
     for cat, label in [('signals', '📥 信号'), ('requirements', '📋 需求'),
-                       ('designs', '📐 设计'), ('decisions', '⚖️ 决策')]:
+                       ('designs', '📐 设计'), ('decisions', '⚖️ 决策'),
+                       ('team', '👥 团队成员')]:
         d = os.path.join(root, cat)
         if not os.path.isdir(d):
             continue

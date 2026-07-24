@@ -599,7 +599,9 @@ async function doSend(){
     // 把 STREAMS[sid] 当前状态渲染进指定气泡节点（当前活跃会话才调用）
     if(!node) return;
     if(S.answer){
-      node.innerHTML = renderMd(S.answer) + (S.toolCount? renderToolPanel(S) : '');
+      // #1：流式中的答案末尾加"回复中…"动态标识，明确区别于"✓ 回复完成"
+      const typing = '<div class="reply-typing" style="margin-top:6px;font-size:11px;color:var(--ink-3)"><span class="busy-dot">●</span> 回复中…</div>';
+      node.innerHTML = renderMd(S.answer) + (S.toolCount? renderToolPanel(S) : '') + typing;
     } else if(S.reasoning){
       node.innerHTML = thinkingHtml(S.reasoning);
     } else {
@@ -726,7 +728,9 @@ async function doSend(){
   function finishStream(){
     if(S.evtSource){ try{ S.evtSource.close(); }catch(_){} S.evtSource=null; }
     S.busy = false;
-    S.finalHtml = S.answer ? renderMd(S.answer) : (S.error ? '<span style="color:var(--danger)">出错了：'+h(S.error)+'</span>' : '<span style="color:var(--ink-3)">（无回复）</span>');
+    // #1：回复完成标识——底部加一行"✓ 回复完成"，区别于流式中的"回复中…"
+    const doneMark = '<div class="reply-done" style="margin-top:6px;font-size:11px;color:var(--brand-strong);opacity:.8">✓ 回复完成</div>';
+    S.finalHtml = S.answer ? (renderMd(S.answer) + doneMark) : (S.error ? '<span style="color:var(--danger)">出错了：'+h(S.error)+'</span>' : '<span style="color:var(--ink-3)">（无回复）</span>');
     // 更新 DOM（若当前还是这条流）
     if(activeSid===streamSid){
       const target = S.node || cc;

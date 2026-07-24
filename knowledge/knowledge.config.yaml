@@ -55,6 +55,13 @@ working:
     template: null                  # 自由组织，无模板
     enforce_template: false
     required_fields: []
+  team:
+    title: 团队成员
+    dir: team
+    template: team/_template.md
+    id_prefix: null                 # 用姓名作文件名，无序号ID
+    enforce_template: false         # 软提示：档案随对话沉淀，字段渐进补全
+    required_fields: [type, name, department, role]
 
 # ── 母版知识库：相对稳定的沉淀 ──
 library:

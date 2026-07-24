@@ -46,6 +46,51 @@ def team_root(home: Path) -> Path:
     return home
 
 
+# ── L2 稳态 loop：落盘前模板校验（与平台 knowledge.config.yaml 同一数据源）──
+def _parse_frontmatter(content: str) -> dict:
+    m = re.match(r'^---\s*\n(.*?)\n---', content, re.DOTALL)
+    if not m:
+        return {}
+    fm = {}
+    for line in m.group(1).splitlines():
+        if ':' in line and not line.startswith((' ', '\t', '-')):
+            k, _, v = line.partition(':')
+            fm[k.strip()] = v.strip().strip('"\'')
+    return fm
+
+
+def validate_content(category: str, content: str, root: Path) -> list:
+    """返回缺失的必填字段列表（读团队 knowledge.config.yaml，单一数据源）。"""
+    cfg_file = root.parent / 'knowledge' / 'knowledge.config.yaml'
+    if not cfg_file.is_file():
+        # 兜底路径：HERMES_KNOWLEDGE_DIR
+        import os
+        env = os.getenv('HERMES_KNOWLEDGE_DIR', '')
+        if env:
+            cfg_file = Path(env) / 'knowledge.config.yaml'
+    required = []
+    enforce = True
+    if cfg_file.is_file():
+        # 极简 yaml 子集解析（只取该分区的 required_fields / enforce_template）
+        in_cat = False
+        for line in cfg_file.read_text(encoding='utf-8').splitlines():
+            if re.match(rf'^  {re.escape(category)}:\s*$', line):
+                in_cat = True
+                continue
+            if in_cat:
+                if re.match(r'^  \S', line):   # 下一个分区
+                    break
+                mm = re.search(r'required_fields:\s*\[([^\]]*)\]', line)
+                if mm:
+                    required = [x.strip() for x in mm.group(1).split(',') if x.strip()]
+                if 'enforce_template: false' in line:
+                    enforce = False
+    if not required or not enforce:
+        return []
+    fm = _parse_frontmatter(content)
+    return [f for f in required if not (fm.get(f) or '').strip()]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--title', required=True, help='入库标题')
@@ -63,6 +108,16 @@ def main():
 
     home = detect_profile_home()
     username = detect_username(home)
+    root0 = team_root(home)
+
+    # ── L2：落盘前硬校验，缺字段直接报错（agent 看到清单会自行补全重试）──
+    missing = validate_content(args.category, content, root0)
+    if missing:
+        print(f'ERROR: frontmatter 缺少必填字段: {", ".join(missing)}')
+        print(f'请在 --- 包裹的 frontmatter 中补全这些字段后重新提交。')
+        print(f'字段说明可参考 knowledge/{args.category}/_template.md')
+        sys.exit(2)
+
     inbox = home / 'inbox'
     inbox.mkdir(parents=True, exist_ok=True)
 
@@ -105,7 +160,20 @@ def main():
     except Exception as e:
         print(f'WARN: 通知管理员失败 {e}')
 
+    # ── L1 稳态 loop：落盘回读自验证（防"假成功"）──
+    fpath = inbox / fname
+    mpath = inbox / (fname + '.meta.json')
+    if not (fpath.is_file() and fpath.stat().st_size > 0 and mpath.is_file()):
+        print(f'ERROR: 提交自检失败——inbox 文件未正确落盘（{fpath}），请重试')
+        sys.exit(3)
+    try:
+        json.loads(mpath.read_text(encoding='utf-8'))
+    except Exception:
+        print(f'ERROR: 提交自检失败——meta.json 损坏，请重试')
+        sys.exit(3)
+
     print(f'OK: 已提交入库审核 file={fname} 提交人={username} 已通知管理员={notified}')
+    print(f'VERIFIED: inbox 落盘自检通过（{fpath}）')
 
 
 if __name__ == '__main__':

@@ -6002,12 +6002,20 @@ def handle_post(handler, parsed) -> bool:
             elif p == "/api/admin/team-agent/publish":
                 res = _ta.publish_team_rules()
             elif p == "/api/admin/team-agent/apply-rules":
-                # 规则 agent 产出的 soul → 写母本 + 一键发布到成员
-                _save = _ta.save_team_soul(body.get("soul") or "")
-                if isinstance(_save, tuple):
-                    res = _save
+                # 规则 agent 产出的 soul → 守护校验 → 写母本 + 一键发布到成员
+                _soul = body.get("soul") or ""
+                # L5 稳态守护：新规则不得丢失关键锚点章节（防 agent 重写时把提交流程规训改丢）
+                _anchors = ["submit_review.py", "提交入库", "个人工作库"]
+                _lost = [a for a in _anchors if a not in _soul]
+                if _lost:
+                    res = ({"error": f"新版规则缺失关键章节/指令：{', '.join(_lost)}。"
+                                     f"这些是成员 agent 正常工作的必备规训，请让规则助手保留后重新生成。"}, 422)
                 else:
-                    res = _ta.publish_team_rules()
+                    _save = _ta.save_team_soul(_soul)
+                    if isinstance(_save, tuple):
+                        res = _save
+                    else:
+                        res = _ta.publish_team_rules()
             elif p == "/api/admin/team-agent/model":
                 res = _ta.save_team_model(body.get("provider") or "", body.get("model") or "")
             elif p == "/api/admin/team-agent/merge-rule":

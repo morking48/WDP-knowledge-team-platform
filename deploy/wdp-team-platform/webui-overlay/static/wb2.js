@@ -568,12 +568,26 @@ function renderDevices(){
       <td>${h(devName(w.device_id))}</td>
       <td style="font-size:11px">${w.git_repo?`<span style="font-family:monospace;color:var(--ink-2)">${h(w.git_repo)}</span>`:'<span style="color:var(--ink-3)">未配置</span>'}</td>
       <td>${tag('已登记','green')}</td>
-      <td><button class="btn sm ghost" data-ws="${h(w.id)}" data-act="rmws">移除</button></td></tr>`).join('')
+      <td><button class="btn sm ghost" data-ws="${h(w.id)}" data-act="editws" data-name="${h(w.name)}" data-path="${h(w.local_path)}" data-git="${h(w.git_repo||'')}" data-dev="${h(w.device_id||'')}">编辑</button>
+          <button class="btn sm ghost" data-ws="${h(w.id)}" data-act="rmws">移除</button></td></tr>`).join('')
       : '<tr><td colspan="6" style="text-align:center;color:var(--ink-3);padding:20px">还没登记工作库目录</td></tr>';
     wsTable.querySelectorAll('[data-act="rmws"]').forEach(b=>b.addEventListener('click', async ()=>{
       if(!(await wbConfirm('移除该工作库登记？'))) return;
       try{ await api('/api/me/workspaces/remove',{method:'POST',body:JSON.stringify({id:b.dataset.ws})}); toast('已移除'); loadDevices(); }
       catch(e){ toast('失败：'+e.message, true); }
+    }));
+    wsTable.querySelectorAll('[data-act="editws"]').forEach(b=>b.addEventListener('click', async ()=>{
+      const form = await wbForm('编辑工作库', [
+        {key:'name', label:'名称', type:'text', value:b.dataset.name, required:true},
+        {key:'local_path', label:'本地路径', type:'text', value:b.dataset.path, required:true},
+        {key:'git_repo', label:'Git 仓库（可选）', type:'text', value:b.dataset.git}
+      ]);
+      if(!form) return;
+      try{
+        await api('/api/me/workspaces/save', {method:'POST', body:JSON.stringify({
+          id:b.dataset.ws, name:form.name, local_path:form.local_path, git_repo:form.git_repo||'', device_id:b.dataset.dev})});
+        toast('已更新'); loadDevices();
+      }catch(e){ toast('更新失败：'+e.message, true); }
     }));
   }
 }
@@ -589,16 +603,17 @@ async function registerDevice(){
 }
 
 async function addWorkspaceEntry(){
-  const name = await wbPrompt('工作库名称（如：默认工作库 / 竞品素材）：');
-  if(!name) return;
-  const local_path = await wbPrompt('本地物理地址（如 D:\\work\\ 或 /Users/xx/work/）：');
-  if(!local_path) return;
-  const git_repo = await wbPrompt('Git 仓库地址（可选，离线降级用；不填留空）：') || '';
+  const form = await wbForm('添加工作库目录', [
+    {key:'name', label:'工作库名称', type:'text', required:true, placeholder:'如：默认工作库 / 竞品素材'},
+    {key:'local_path', label:'本地物理地址', type:'text', required:true, placeholder:'如 D:\\work\\ 或 /Users/xx/work/'},
+    {key:'git_repo', label:'Git 仓库（可选，离线降级用）', type:'text', placeholder:'不填留空'}
+  ]);
+  if(!form) return;
   // 绑定到当前设备
   const cur = _devData && (_devData.devices||[]).find(x=>x.machine_id===_devData.current_machine_id);
   try{
     await api('/api/me/workspaces/save', {method:'POST', body:JSON.stringify({
-      name, local_path, git_repo, device_id: cur?cur.id:''
+      name:form.name, local_path:form.local_path, git_repo:form.git_repo||'', device_id: cur?cur.id:''
     })});
     toast('已添加工作库');
     loadDevices();

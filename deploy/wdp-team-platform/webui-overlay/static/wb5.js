@@ -210,7 +210,19 @@ window.wbOpenReviewDialog = function(item){
           user: item._profile || item.profile, file: item.file})});
         api('/api/admin/team-agent/record-decision', {method:'POST', body:JSON.stringify({
           kind:'review', entry:{title:item.title, category:item.category, decision:'通过', ai_advice:adv, reason:'', via:'dialog'}})}).catch(()=>{});
-        dlg.addSys(`✅ 已入库到 ${h(d.final_path||'')}（决策已记录）`);
+        // L4 稳态：git commit 结果显式回报（失败=有文件无版本记录，必须让管理员知道）
+        const gitWarn = (d.git && d.git !== 'git 已提交') ? `<br><span style="color:var(--danger)">⚠ 版本记录异常：${h(d.git)}</span>` : '';
+        dlg.addSys(`✅ 已入库到 ${h(d.final_path||'')}（决策已记录）${gitWarn}`);
+        // suggested_owner 落地：入库后按建议自动写 owner（有建议才写，写失败不阻塞）
+        if(prop.suggested_owner && (prop.suggested_category==='requirements' || item.category==='requirements')){
+          try{
+            const rid = (d.final_path||'').split('/').pop().replace(/\.md$/,'');
+            await api('/api/admin/knowledge/update', {method:'POST', body:JSON.stringify({
+              type:'requirements', id: rid, updates:{owner: prop.suggested_owner},
+              note:`审核agent建议分配 @${prop.suggested_owner}`})});
+            dlg.addSys(`👤 已按建议分配给 ${h(prop.suggested_owner)}（可在工作台改派）`);
+          }catch(_){ dlg.addSys('（建议负责人未能自动写入，可在工作台手动分配）'); }
+        }
       }else{
         const reason = prop.suggested_reject_reason || prop.reason || '不符合入库标准';
         await api('/api/review/reject', {method:'POST', body:JSON.stringify({

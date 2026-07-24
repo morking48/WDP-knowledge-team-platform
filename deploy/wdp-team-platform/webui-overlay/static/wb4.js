@@ -728,6 +728,58 @@ window.wbLoadMine = async function(){
   }
 };
 
+// ════════════════════════════════════════════════
+// 团队成员 tab —— 档案 + 能力画像（随对话自动沉淀）
+// ════════════════════════════════════════════════
+window.wbLoadTeam = async function(){
+  const box = document.getElementById('teamBox');
+  if(!box) return;
+  box.innerHTML = '<div style="color:var(--ink-3);padding:12px">加载中…</div>';
+  try{
+    const d = await api('/api/knowledge/team');
+    const items = d.items || [];
+    if(!items.length){ box.innerHTML = '<div style="color:var(--ink-3);padding:20px;text-align:center">暂无团队成员档案</div>'; return; }
+    // 按部门分组
+    const depts = {};
+    items.forEach(m=>{ const dp=m.department||'其它'; (depts[dp]=depts[dp]||[]).push(m); });
+    const order = ['产品','引擎','全栈','效率'];
+    const deptKeys = Object.keys(depts).sort((a,b)=>{const ia=order.indexOf(a),ib=order.indexOf(b);return (ia<0?9:ia)-(ib<0?9:ib);});
+    box.innerHTML = deptKeys.map(dp=>{
+      const members = depts[dp].sort((a,b)=> (a.role==='负责人'?0:1)-(b.role==='负责人'?0:1));
+      return `<div style="margin-bottom:18px">
+        <div style="font-size:13px;font-weight:700;color:var(--brand-strong);margin-bottom:8px">${h(dp)}（${members.length}人）</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px">
+        ${members.map(m=>`<div class="team-card" data-name="${h(m.name||m.id)}" style="border:1px solid var(--line-2);border-radius:11px;padding:12px 14px;background:rgba(255,255,255,.6);cursor:pointer">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <span class="oa" style="width:30px;height:30px;font-size:12px">${h((m.name||'?')[0])}</span>
+            <div><b>${h(m.name||m.id)}</b> ${m.role==='负责人'?'<span class="tag green" style="font-size:10px">负责人</span>':''}</div>
+          </div>
+          <div style="font-size:12px;color:var(--ink-3);line-height:1.6" class="team-portrait" data-name="${h(m.name||m.id)}">点击查看能力画像…</div>
+        </div>`).join('')}
+        </div></div>`;
+    }).join('');
+    // 点击卡片展开能力画像（读详情正文）
+    box.querySelectorAll('.team-card').forEach(c=>c.addEventListener('click', async ()=>{
+      const name = c.dataset.name;
+      const pd = c.querySelector('.team-portrait');
+      if(pd.dataset.loaded){ return; }
+      pd.textContent = '加载中…';
+      try{
+        const dd = await api('/api/knowledge/item?type=team&id='+encodeURIComponent(name));
+        const body = (dd.item && dd.item._body) || '';
+        // 提取"能力画像"段
+        const m = body.match(/##\s*能力画像\s*\n([\s\S]*?)(?=\n##|\Z)/);
+        const portrait = m ? m[1].trim() : '';
+        pd.innerHTML = portrait && !portrait.includes('待积累') && !portrait.includes('随对话')
+          ? h(portrait) : '<span style="color:var(--ink-3)">能力画像待积累（随对话自动沉淀）</span>';
+        pd.dataset.loaded = '1';
+      }catch(e){ pd.textContent = '加载失败'; }
+    }));
+  }catch(e){
+    box.innerHTML = `<div style="color:var(--danger);padding:12px">加载失败：${h(e.message)}</div>`;
+  }
+};
+
 // W2：需求详情内嵌决策背景（决策作为分析背景并入需求）
 window.wbLoadReqDecisions = async function(reqId, box){
   try{

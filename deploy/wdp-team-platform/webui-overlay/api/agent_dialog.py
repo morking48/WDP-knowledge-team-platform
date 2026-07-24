@@ -101,6 +101,32 @@ def _extract_proposal(text: str):
 
 # ── 上下文构建 ────────────────────────────────────────────────────────────────
 
+# ── L3 稳态 loop：proposal 结构校验 + 修正提示 ──────────────────────────
+_PROPOSAL_REQUIRED = {
+    'merge': ['groups'],
+    'review': ['recommendation'],
+    'rules': ['soul'],
+}
+
+
+def _proposal_valid(kind: str, proposal) -> bool:
+    """proposal 是否含该 kind 的必备键（None/残缺=False）。"""
+    if not isinstance(proposal, dict):
+        return False
+    for k in _PROPOSAL_REQUIRED.get(kind or '', []):
+        if k not in proposal:
+            return False
+        if kind == 'rules' and not (proposal.get('soul') or '').strip():
+            return False
+    return True
+
+
+def _proposal_fix_hint(kind: str) -> str:
+    need = _PROPOSAL_REQUIRED.get(kind or '', [])
+    return (f'你上一条回复的 ```proposal 代码块缺失或格式不合法（必须是含 {need} 键的 JSON）。'
+            f'请重新输出完整回复：简短说明 + 末尾一个合法的 ```proposal 代码块，不要输出其它代码块。')
+
+
 def _merge_system_prompt() -> str:
     from api.merge_agent import get_merge_rule
     from api import knowledge as _kb
@@ -254,6 +280,17 @@ def start_dialog(kind: str, ref: dict) -> dict:
         return {'error': f'agent 分析失败: {e}'}, 500
     messages.append({'role': 'assistant', 'content': raw})
     reply, proposal = _extract_proposal(raw)
+    # L3 稳态 loop：首轮必须有合法 proposal，格式错则带错误信息重试一次
+    if not _proposal_valid(kind, proposal):
+        messages.append({'role': 'user', 'content': _proposal_fix_hint(kind)})
+        try:
+            raw2 = _call_llm(messages, max_tokens=_mt)
+            messages.append({'role': 'assistant', 'content': raw2})
+            reply2, proposal2 = _extract_proposal(raw2)
+            if _proposal_valid(kind, proposal2):
+                reply, proposal = reply2, proposal2
+        except Exception as e:
+            logger.warning('proposal 格式重试失败: %s', e)
     did = uuid.uuid4().hex[:12]
     with _LOCK:
         _DIALOGS[did] = {'kind': kind, 'ref': ref or {}, 'messages': messages,
@@ -282,6 +319,17 @@ def send_dialog(dialog_id: str, message: str) -> dict:
     d['messages'].append({'role': 'assistant', 'content': raw})
     d['touched'] = time.time()
     reply, proposal = _extract_proposal(raw)
+    # L3：有 proposal 块但格式残缺 → 重试一次（无 proposal 的纯讨论轮不强求）
+    if proposal is not None and not _proposal_valid(d.get('kind'), proposal):
+        d['messages'].append({'role': 'user', 'content': _proposal_fix_hint(d.get('kind'))})
+        try:
+            raw2 = _call_llm(d['messages'], max_tokens=_mt)
+            d['messages'].append({'role': 'assistant', 'content': raw2})
+            reply2, proposal2 = _extract_proposal(raw2)
+            if _proposal_valid(d.get('kind'), proposal2):
+                reply, proposal = reply2, proposal2
+        except Exception as e:
+            logger.warning('proposal 格式重试失败: %s', e)
     return {'reply': reply, 'proposal': proposal}
 
 
