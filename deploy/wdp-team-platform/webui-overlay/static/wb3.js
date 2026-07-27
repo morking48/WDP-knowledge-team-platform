@@ -788,7 +788,8 @@ async function uploadFiles(fileList){
     fd.append('file', f, f.name);
     try{
       const r = await fetch('/api/me/upload', {method:'POST', credentials:'same-origin',
-        headers: W && window.__CSRF_TOKEN__ ? {'X-CSRF-Token':window.__CSRF_TOKEN__} : {}, body:fd});
+        headers: window.__CSRF_TOKEN__ ? {'X-CSRF-Token':window.__CSRF_TOKEN__} : {}, body:fd});
+      if(r.status === 401){ location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
       const d = await r.json();
       if(r.ok){ pendingFiles.push({name:d.filename||f.name, path:d.path}); toast('已上传 '+(d.filename||f.name)); }
       else toast('上传失败：'+(d.error||r.status), true);

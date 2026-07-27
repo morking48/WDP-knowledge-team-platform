@@ -48,6 +48,16 @@ async function api(path, opts){
   let data = null;
   try{ data = await r.json(); }catch(_){}
   if(!r.ok){
+    // 全局 401 处理：session 失效/被挤下线 → 直接跳登录页，
+    // 而不是让各功能各自弹"加载失败：Authentication required"（体验缺陷）。
+    // 放行 /api/auth/* 自身的 401（登录接口自己处理错误提示）。
+    if(r.status === 401 && !path.startsWith('/api/auth/')){
+      try{ sessionStorage.setItem('wb_relogin_hint', '1'); }catch(_){}
+      location.href = '/login?next=' + encodeURIComponent(location.pathname);
+      // 抛出但页面已在跳转，调用方的 catch 不会再有机会渲染
+      const err = new Error('会话已过期，正在跳转登录…');
+      err.status = 401; throw err;
+    }
     const err = new Error((data && data.error) || ('HTTP '+r.status));
     err.status = r.status; err.data = data;
     throw err;
