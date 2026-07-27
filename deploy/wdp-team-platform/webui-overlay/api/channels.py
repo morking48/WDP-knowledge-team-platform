@@ -388,12 +388,22 @@ def save_workspace_entry(body: dict) -> dict:
                           'device_id': device_id, 'git_repo': git_repo})
                 break
     data['workspaces'] = wss
+    # 体验优化：登记后自动激活。若当前 active_workspace 为空，或指向的库已不存在，
+    # 则把这个（通常是第一个）设为对话默认工作库——避免用户登记后还要手动"设为默认"，
+    # 也让对话立即能识别到工作库（agent 读 active_workspace 定位工作目录）。
+    cur_active = data.get('active_workspace')
+    active_valid = cur_active and any(w.get('id') == cur_active for w in wss)
+    if not active_valid:
+        data['active_workspace'] = wid
     _write_json(_devices_file(), data)
-    return {'ok': True, 'id': wid}
+    return {'ok': True, 'id': wid, 'active_workspace': data.get('active_workspace')}
 
 
 def remove_workspace_entry(wid: str) -> dict:
     data = _read_json(_devices_file(), {'devices': [], 'workspaces': []})
     data['workspaces'] = [w for w in data.get('workspaces', []) if w.get('id') != wid]
+    # 若删掉的正好是当前激活的工作库，自动切到剩下的第一个（避免 active 悬空 → 对话又识别不到）
+    if data.get('active_workspace') == wid:
+        data['active_workspace'] = data['workspaces'][0]['id'] if data['workspaces'] else None
     _write_json(_devices_file(), data)
-    return {'ok': True}
+    return {'ok': True, 'active_workspace': data.get('active_workspace')}
