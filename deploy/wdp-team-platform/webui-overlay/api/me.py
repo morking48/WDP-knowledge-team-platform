@@ -97,8 +97,12 @@ def handle_me_workspace(handler, parsed):
     if ws.is_dir():
         try:
             for p in sorted(ws.rglob('*'), key=lambda x: -x.stat().st_mtime):
-                if p.is_file() and not p.name.startswith('.'):
+                if p.is_file():
                     rel = p.relative_to(ws)
+                    # 跳过隐藏文件，以及任何隐藏目录（.开头）下的文件——
+                    # 如 .tmp_signals/（agent 中转用），不该出现在"最近上传"列表
+                    if any(part.startswith('.') for part in rel.parts):
+                        continue
                     files.append({
                         'path': str(rel).replace('\\', '/'),
                         'size': p.stat().st_size,

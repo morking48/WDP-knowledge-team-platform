@@ -72,11 +72,18 @@ def clean_inbox_uploads():
         ib = os.path.join(p, 'inbox')
         if os.path.isdir(ib):
             shutil.rmtree(ib, ignore_errors=True)
-        for up in (os.path.join(p, 'workspace', 'uploads'), os.path.join(p, 'workspace')):
+        # workspace 下的上传文件 + agent 中转隐藏目录（.tmp_signals 等）
+        # 保留 workspace 根的团队参考文档（如 团队说明.md）
+        ws = os.path.join(p, 'workspace')
+        if os.path.isdir(ws):
+            up = os.path.join(ws, 'uploads')
             if os.path.isdir(up):
-                for f in glob.glob(up + r"\*"):
-                    if os.path.isfile(f):
-                        os.remove(f)
+                shutil.rmtree(up, ignore_errors=True)
+                os.makedirs(up, exist_ok=True)
+            # 清 agent 生成的隐藏中转目录（. 开头，如 .tmp_signals）
+            for hidden in glob.glob(ws + r"\.*"):
+                if os.path.isdir(hidden):
+                    shutil.rmtree(hidden, ignore_errors=True)
         # 个人中心配置：设备/工作库登记、渠道
         for cfgf in ('devices.json', 'channels.json'):
             fp = os.path.join(p, cfgf)
