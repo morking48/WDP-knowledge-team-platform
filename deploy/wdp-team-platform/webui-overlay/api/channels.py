@@ -60,6 +60,15 @@ PROVIDERS = {
         'test_url': 'https://llm-api.net/v1/models',
         'models': ['claude-opus-4-6', 'claude-opus-4-5-20251101', 'claude-sonnet-4-5-20250929', 'claude-sonnet-4-6'],
     },
+    'GitHub Copilot': {
+        # 成员填自己的 GitHub Copilot token（gho_/ghu_/ghp_，来自本机 copilot 登录），
+        # 用各自的 Copilot 订阅额度。token 走 OpenAI 兼容端点 api.githubcopilot.com。
+        'env': 'COPILOT_GITHUB_TOKEN',
+        'base_url': 'https://api.githubcopilot.com',
+        'test_url': 'https://api.githubcopilot.com/models',
+        'models': ['claude-opus-4.8', 'claude-sonnet-4.5', 'gpt-5', 'o3', 'gpt-4o'],
+        'provider_id': 'copilot',   # 映射到 hermes 运行时的 provider 名
+    },
     '自定义OpenAI兼容': {
         'env': 'CUSTOM_OPENAI_API_KEY',
         'test_url': '',   # 用渠道自带 base_url
@@ -250,6 +259,10 @@ def test_channel(cid: str) -> dict:
             req.add_header('anthropic-version', '2023-06-01')
         else:
             req.add_header('Authorization', 'Bearer ' + key)
+        # GitHub Copilot 的 /models 需要客户端标识头，否则返回 403/404
+        if chan.get('provider') == 'GitHub Copilot':
+            req.add_header('Copilot-Integration-Id', 'vscode-chat')
+            req.add_header('Editor-Version', 'vscode/1.95.0')
         with urllib.request.urlopen(req, timeout=12) as r:
             ok = 200 <= r.status < 300
         _update_channel_status(cid, 'ok' if ok else 'fail')
@@ -271,6 +284,185 @@ def _update_channel_status(cid: str, status: str):
             c['status'] = status
             break
     _write_json(_channels_file(), data)
+
+
+# ══════════════════════════════════════════════════════════════════
+#  对话模型切换：团队默认 + 成员个人已启用渠道
+# ══════════════════════════════════════════════════════════════════
+def _provider_runtime_id(provider_display: str) -> str:
+    """把渠道展示名映射到 hermes 运行时 provider id。
+
+    多数 OpenAI 兼容渠道运行时都当 'openai'（配 base_url）；copilot 是一等公民
+    provider（有专门 token 兑换），Anthropic 走 anthropic。
+    """
+    prov = PROVIDERS.get(provider_display, {})
+    if prov.get('provider_id'):
+        return prov['provider_id']
+    mapping = {
+        'OpenRouter': 'openrouter',
+        'DeepSeek': 'deepseek',
+        'Kimi': 'moonshot',
+        'Anthropic': 'anthropic',
+    }
+    return mapping.get(provider_display, 'openai')
+
+
+def get_chat_model_options() -> dict:
+    """对话顶部下拉的选项：团队默认 + 成员已启用且填了 Key 的渠道。
+
+    current = 该 profile config.yaml 当前 default（None/空 = 团队默认）。
+    """
+    data = _read_json(_channels_file(), {'channels': [], 'active_id': None})
+    env = _load_env()
+    opts = [{'id': '', 'label': '团队默认模型', 'is_default': True}]
+    for c in data.get('channels', []):
+        if not c.get('enabled'):
+            continue
+        prov = PROVIDERS.get(c.get('provider'), {})
+        env_name = prov.get('env', '')
+        if env_name and not env.get(env_name):
+            continue  # 没填 Key 的渠道不进对话下拉
+        model = c.get('model') or (prov.get('models') or [''])[0]
+        if not model:
+            continue
+        opts.append({
+            'id': c.get('id'),
+            'label': f"{c.get('name') or c.get('provider')} · {model}",
+            'provider': c.get('provider'),
+            'model': model,
+        })
+    # 读当前 profile config 的 default，判断选中项
+    current = _current_profile_default_model()
+    return {'options': opts, 'current_model': current}
+
+
+def _profile_config_path() -> Path:
+    return _home() / 'config.yaml'
+
+
+def _is_root_home() -> bool:
+    """当前请求的 home 是否是团队根 home（admin 用根，成员用各自 profile）。"""
+    try:
+        from api.profiles import _DEFAULT_HERMES_HOME
+        return Path(_home()).resolve() == Path(_DEFAULT_HERMES_HOME).resolve()
+    except Exception:
+        return False
+
+
+def _current_profile_default_model() -> str:
+    try:
+        import yaml as _yaml
+        p = _profile_config_path()
+        if p.exists():
+            cfg = _yaml.safe_load(p.read_text(encoding='utf-8')) or {}
+            return ((cfg.get('model') or {}).get('default') or '')
+    except Exception:
+        pass
+    return ''
+
+
+def _team_default_anchor_file() -> Path:
+    """团队默认模型的独立锚点文件（存团队根 home，不被个人选择污染）。"""
+    try:
+        from api.profiles import _DEFAULT_HERMES_HOME
+        return Path(_DEFAULT_HERMES_HOME) / '.team-default-model.json'
+    except Exception:
+        return _home() / '.team-default-model.json'
+
+
+def _team_default_model() -> dict:
+    """团队默认模型（回退目标）。
+
+    ⚠️ 不能就地读根 config.yaml——admin 用根 home，切个人模型会覆盖它，
+    再读就拿到被污染的值（循环依赖）。改用独立锚点文件：
+    锚点存在就读锚点；不存在（首次）则从根 config 快照一次并落盘固化。
+    """
+    anchor = _team_default_anchor_file()
+    saved = _read_json(anchor, None)
+    if isinstance(saved, dict) and saved.get('default'):
+        return {'default': saved['default'], 'provider': saved.get('provider')}
+    # 首次：从根 config 快照团队默认，固化到锚点
+    td = {'default': 'moonshotai/kimi-k3', 'provider': 'openrouter'}
+    try:
+        import yaml as _yaml
+        from api.profiles import _DEFAULT_HERMES_HOME
+        p = Path(_DEFAULT_HERMES_HOME) / 'config.yaml'
+        if p.exists():
+            cfg = _yaml.safe_load(p.read_text(encoding='utf-8')) or {}
+            m = cfg.get('model') or {}
+            if isinstance(m, dict) and m.get('default'):
+                td = {'default': m.get('default'), 'provider': m.get('provider')}
+    except Exception:
+        pass
+    try:
+        _write_json(anchor, td)
+    except Exception:
+        pass
+    return td
+
+
+def set_chat_model(cid: str) -> dict:
+    """把对话模型切到指定渠道（cid 为空 = 回到团队默认）。
+
+    写当前用户 profile 的 config.yaml 的 model.default/provider，对话 agent 即生效。
+    """
+    try:
+        import yaml as _yaml
+    except ImportError:
+        return {'error': 'yaml 不可用'}, 500
+    p = _profile_config_path()
+    cfg = {}
+    if p.exists():
+        try:
+            cfg = _yaml.safe_load(p.read_text(encoding='utf-8')) or {}
+        except Exception:
+            cfg = {}
+    is_root = _is_root_home()
+    # 关键：切换前先固化团队默认锚点（幂等）。必须在污染根 config 之前调用，
+    # 否则 admin 首次切个人模型后，锚点会快照到已污染的值。
+    if is_root:
+        _team_default_model()
+    if not cid:
+        # 回到团队默认：
+        #  - 成员 profile（非根）：删 model 覆盖，继承团队 config
+        #  - admin（根 home）：不能删（会破坏团队默认），显式写回团队默认模型
+        if is_root:
+            td = _team_default_model()
+            ms = cfg.get('model') if isinstance(cfg.get('model'), dict) else {}
+            ms['default'] = td['default']
+            if td.get('provider'):
+                ms['provider'] = td['provider']
+            ms.pop('base_url', None)   # 团队默认不需要个人 base_url 覆盖
+            cfg['model'] = ms
+        else:
+            cfg.pop('model', None)
+        p.write_text(_yaml.dump(cfg, default_flow_style=False, allow_unicode=True, sort_keys=False), encoding='utf-8')
+        return {'ok': True, 'current_model': '', 'label': '团队默认模型'}
+    data = _read_json(_channels_file(), {'channels': [], 'active_id': None})
+    chan = next((c for c in data.get('channels', []) if c.get('id') == cid), None)
+    if not chan:
+        return {'error': '渠道不存在'}, 404
+    if not chan.get('enabled'):
+        return {'error': '该渠道未启用'}, 400
+    prov = PROVIDERS.get(chan.get('provider'), {})
+    env_name = prov.get('env', '')
+    if env_name and not _load_env().get(env_name):
+        return {'error': '该渠道未配置 Key'}, 400
+    model = chan.get('model') or (prov.get('models') or [''])[0]
+    if not model:
+        return {'error': '该渠道无可用模型'}, 400
+    model_section = cfg.get('model') if isinstance(cfg.get('model'), dict) else {}
+    model_section['default'] = model
+    model_section['provider'] = _provider_runtime_id(chan.get('provider'))
+    base = chan.get('base_url') or prov.get('base_url')
+    if base:
+        model_section['base_url'] = base
+    else:
+        model_section.pop('base_url', None)   # 无自定义端点时清掉残留 base_url
+    cfg['model'] = model_section
+    p.write_text(_yaml.dump(cfg, default_flow_style=False, allow_unicode=True, sort_keys=False), encoding='utf-8')
+    return {'ok': True, 'current_model': model,
+            'label': f"{chan.get('name') or chan.get('provider')} · {model}"}
 
 
 # ══════════════════════════════════════════════════════════════════

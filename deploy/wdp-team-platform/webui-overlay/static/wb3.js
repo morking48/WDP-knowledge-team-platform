@@ -150,6 +150,7 @@ function syncChips(){
 // R40 状态模型：activeSid=当前真实会话id；_draftMode=新对话草稿态(未发消息,不落盘)
 let _draftMode = false;
 let _realSessCount = 0;   // 侧栏真实会话数（新建上限判断）
+let _visibleCnt = {};     // sid → 对话正文真实条数（过滤 tool/空占位后，修正侧栏计数）
 const _MAX_SESS = 10;     // 对话卡片上限
 
 function draftKey(){ return 'wb_draft_' + (activeSid || (_draftMode ? 'new' : 'welcome')); }
@@ -183,7 +184,9 @@ async function loadSessions(){
     html += sessions.slice(0,30).map(s=>{
       const sid = s.session_id || s.id;
       const title = s.title || '未命名对话';
-      const cnt = s.message_count!=null?s.message_count:(s.messageCount||0);
+      // 优先用已打开会话的对话正文真实条数（缓存），否则用后端 message_count（可能含 tool/空占位偏大）
+      const rawCnt = s.message_count!=null?s.message_count:(s.messageCount||0);
+      const cnt = (_visibleCnt[sid]!=null) ? _visibleCnt[sid] : rawCnt;
       return `<div class="sess ${sid===activeSid?'active':''}" data-sid="${h(sid)}">
         <div class="st">${h(title)}</div><div class="sm">${cnt} 条消息</div>
         <button class="sess-rename" data-sid="${h(sid)}" data-title="${h(title)}" title="重命名">✏️</button>
@@ -234,6 +237,9 @@ async function loadSessions(){
   // 重试上一条按钮：用上一条消息重新发送（模型/网络出错时不用重新输入）
   const rtb = $('#chatRetryBtn');
   if(rtb && !rtb._bound){ rtb._bound=1; rtb.onclick = retryLastMsg; }
+  // 消息操作栏（复制/重试/编辑）——事件委托到 transcript，覆盖动态追加的消息
+  const trEl = $('#transcript');
+  if(trEl && !trEl._actBound){ trEl._actBound=1; trEl.addEventListener('click', onMsgAct); }
   // 个人工作库侧栏
   loadChatWorkspaceList();
 }
@@ -502,6 +508,10 @@ async function switchSession(sid){
         if(role === 'assistant') return !!c;   // 空 assistant（工具调用占位）丢弃
         return false;                          // tool / system 等一律不显示
       });
+      // 记录该会话的对话正文真实条数（供侧栏卡片计数用，修正后端把 tool/空占位也算进的口径）
+      _visibleCnt[sid] = shown.length;
+      const _cntEl = document.querySelector('#sessList .sess[data-sid="'+sid+'"] .sm');
+      if(_cntEl && !/回复中/.test(_cntEl.textContent)) _cntEl.textContent = shown.length + ' 条消息';
       tr.innerHTML = shown.map(m => renderMsg(m.role, m.content||m.text||'')).join('')
         || '<div style="color:var(--ink-3);text-align:center;padding:20px">（空对话）</div>';
       tr.scrollTop = tr.scrollHeight;
@@ -532,22 +542,85 @@ async function switchSession(sid){
 async function loadModelHint(){
   const sel = $('#chatModelSelect');
   const hint = $('#chatModelHint');
+  if(!sel) return;
   try{
-    const d = await api('/api/me/agent');
-    // 简化：展示当前 profile 默认模型
-    if(sel){ sel.innerHTML = '<option>团队默认模型</option>'; }
+    const d = await api('/api/me/chat_models');
+    const opts = (d && d.options) || [];
+    const cur = (d && d.current_model) || '';
+    // 找出当前选中项：current_model 匹配某渠道的 model → 选它，否则团队默认
+    let curId = '';
+    for(const o of opts){ if(o.model && o.model === cur){ curId = o.id; break; } }
+    sel.innerHTML = opts.map(o=>`<option value="${h(o.id)}"${o.id===curId?' selected':''}>${h(o.label)}</option>`).join('');
+    if(!sel._bound){ sel._bound=1; sel.addEventListener('change', onChatModelChange); }
+    if(hint){
+      hint.textContent = opts.length>1 ? '' : '个人渠道可在「个人中心」配置';
+    }
+  }catch(_){
+    sel.innerHTML = '<option value="">团队默认模型</option>';
     if(hint) hint.textContent = '个人渠道可在「个人中心」配置';
-  }catch(_){}
+  }
+}
+
+async function onChatModelChange(e){
+  const sel = e.target;
+  const cid = sel.value;
+  const prev = sel.dataset.prev || '';
+  try{
+    const r = await api('/api/me/channels/set_chat_model', {method:'POST', body:JSON.stringify({id: cid})});
+    sel.dataset.prev = cid;
+    toast('已切换到「'+(r.label||'团队默认')+'」，下一条消息生效');
+  }catch(err){
+    // 切换失败回退到上一个选项
+    sel.value = prev;
+    toast('切换失败：'+(err.message||'请重试'), true);
+  }
 }
 
 // ── 消息渲染 ──
 function renderMsg(role, content){
   if(role === 'user'){
     return `<div class="cmsg me"><div class="cav">${h((W.USER.username||'我')[0])}</div><div class="cb">
-      <div class="cn">我</div><div class="cc">${renderMd(content)}</div></div></div>`;
+      <div class="cn">我</div><div class="cc">${renderMd(content)}</div>
+      <div class="msg-acts"><button data-mact="copy" title="复制">📋 复制</button><button data-mact="edit" title="编辑后重新发送">✏️ 编辑</button></div></div></div>`;
   }
   return `<div class="cmsg ai"><div class="cav">AI</div><div class="cb">
-    <div class="cn">你的 agent</div><div class="cc">${renderMd(content)}</div></div></div>`;
+    <div class="cn">你的 agent</div><div class="cc">${renderMd(content)}</div>
+    <div class="msg-acts"><button data-mact="copy" title="复制">📋 复制</button><button data-mact="retry" title="用上一条消息重新发送">🔄 重试</button></div></div></div>`;
+}
+
+// 消息操作栏事件委托：复制 / 重试 / 编辑
+function onMsgAct(e){
+  const btn = e.target.closest('.msg-acts [data-mact]'); if(!btn) return;
+  const cmsg = btn.closest('.cmsg'); if(!cmsg) return;
+  const cc = cmsg.querySelector('.cc');
+  let text = cc ? (cc.innerText||'').trim() : '';
+  // 清理流式尾标（复制/编辑时不带这些）
+  text = text.replace(/\s*✓\s*回复完成\s*$/,'').replace(/\s*●?\s*回复中…\s*$/,'')
+             .replace(/\s*⚙️\s*已调用\s*\d+\s*个工具\s*$/,'').trim();
+  const act = btn.dataset.mact;
+  if(act === 'copy'){ copyMsgText(text, btn); }
+  else if(act === 'retry'){ retryLastMsg(); }
+  else if(act === 'edit'){
+    const ta = $('#composerInput');
+    if(ta){
+      // 去掉用户气泡里附加的\"[已上传到工作库：...]\"提示行
+      ta.value = text.replace(/\n*\[已上传到工作库：[^\]]*\]\s*$/,'').trim();
+      autoGrow(); ta.focus();
+      try{ ta.setSelectionRange(ta.value.length, ta.value.length); }catch(_){}
+    }
+  }
+}
+
+function copyMsgText(text, btn){
+  const done = ()=>{ if(btn){ const o=btn.innerHTML; btn.innerHTML='✓ 已复制'; setTimeout(()=>{ btn.innerHTML=o; },1200); } };
+  const fallback = ()=>{
+    try{ const t=document.createElement('textarea'); t.value=text; t.style.position='fixed'; t.style.opacity='0';
+      document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove(); done(); }
+    catch(_){ toast('复制失败', true); }
+  };
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(done).catch(fallback);
+  } else { fallback(); }
 }
 
 function appendMsg(role, content){
@@ -572,6 +645,19 @@ function retryLastMsg(){
   const ta = $('#composerInput');
   if(ta){ ta.value = _lastUserMsg; autoGrow(); }
   doSend();
+}
+
+// 解析当前启用的个人工作库真实路径（active_workspace → local_path）。
+// 未登记设备/未配工作库/环境不一致 → 返回 null（让 agent 用默认工作目录）。
+async function resolveActiveWorkspacePath(){
+  try{
+    const env = await api('/api/me/environment');
+    if(env.registered && env.active_workspace){
+      const aw = (env.workspaces||[]).find(w=>w.id===env.active_workspace);
+      if(aw && aw.local_path) return aw.local_path;
+    }
+  }catch(_){}
+  return null;
 }
 
 async function doSend(){
@@ -659,15 +745,9 @@ async function doSend(){
         return;
       }
     }
+    // 解析当前启用的个人工作库路径（新建会话时传给后端；已有会话也用它给 chat/start）
+    const wsPath = await resolveActiveWorkspacePath();
     if(!activeSid){
-      let wsPath = null;
-      try{
-        const env = await api('/api/me/environment');
-        if(env.registered && env.active_workspace){
-          const aw = (env.workspaces||[]).find(w=>w.id===env.active_workspace);
-          if(aw && aw.local_path) wsPath = aw.local_path;
-        }
-      }catch(_){}
       const s = await api('/api/session/new', {method:'POST', body:JSON.stringify(
         wsPath ? {profile: W.USER.profile || 'default', workspace: wsPath}
                : {profile: W.USER.profile || 'default'}
@@ -711,7 +791,8 @@ async function doSend(){
       session_id: activeSid,
       message: msg || '（见上传的文件）',
       profile: W.USER.profile || 'default',
-      workspace: W.WORKSPACE || undefined
+      // 优先用用户在个人中心启用的工作库路径；没配则不传，让后端沿用 session 已设的 workspace
+      workspace: wsPath || undefined
     };
     const startData = await api('/api/chat/start', {method:'POST', body:JSON.stringify(startBody)});
     const streamId = startData.stream_id;
@@ -776,6 +857,12 @@ async function doSend(){
     // 流结束，清掉该会话的流式状态（finalHtml 已由后端落盘，重新拉历史即有）
     // 保留一小段时间供切回渲染？不需要——switchSession 重新拉历史即可。
     delete STREAMS[streamSid];
+    // 更新该会话的对话正文真实条数缓存（当前 transcript 里的 .cmsg 即过滤后的对话条数），
+    // 供侧栏计数用，避免刚发完消息卡片显示后端偏大的 message_count。
+    if(activeSid === streamSid){
+      const tr2 = document.getElementById('transcript');
+      if(tr2) _visibleCnt[streamSid] = tr2.querySelectorAll('.cmsg').length;
+    }
     // 刷新会话列表（标题可能更新、新对话转正）
     loadSessions();
   }

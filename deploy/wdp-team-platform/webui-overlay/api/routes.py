@@ -5389,6 +5389,12 @@ def handle_get(handler, parsed) -> bool:
             if _users.multiuser_enabled() and not _users.current_request_user(handler):
                 return j(handler, {"error": "未登录"}, status=401)
             res = _ch.list_channels()
+        elif sub == "chat_models":
+            from api import channels as _ch
+            from api import users as _users
+            if _users.multiuser_enabled() and not _users.current_request_user(handler):
+                return j(handler, {"error": "未登录"}, status=401)
+            res = _ch.get_chat_model_options()
         elif sub == "devices":
             from api import channels as _ch
             from api import users as _users
@@ -5987,6 +5993,8 @@ def handle_post(handler, parsed) -> bool:
                 res = _ch.test_channel(body.get("id"))
             elif p == "/api/me/channels/activate":
                 res = _ch.activate_channel(body.get("id"))
+            elif p == "/api/me/channels/set_chat_model":
+                res = _ch.set_chat_model(body.get("id") or "")
             elif p == "/api/me/devices/register":
                 res = _ch.register_device(body)
             elif p == "/api/me/devices/remove":
