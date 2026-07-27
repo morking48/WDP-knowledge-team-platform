@@ -489,7 +489,17 @@ async function switchSession(sid){
            || await api('/api/sessions/'+encodeURIComponent(sid)).catch(()=>null);
     const msgs = (d && (d.messages || (d.session && d.session.messages))) || [];
     if(tr){
-      tr.innerHTML = msgs.map(m => renderMsg(m.role, m.content||m.text||'')).join('')
+      // 只渲染对话正文：user + 有实际内容的 assistant。
+      // 过滤 tool 角色消息、空 assistant（工具调用中间态）、纯工具结果——
+      // 否则历史恢复会冒出一堆"读文件/工具过程"内容（用户反馈的问题）。
+      const shown = msgs.filter(m => {
+        const role = m.role;
+        const c = (m.content || m.text || '').trim();
+        if(role === 'user') return !!c;
+        if(role === 'assistant') return !!c;   // 空 assistant（工具调用占位）丢弃
+        return false;                          // tool / system 等一律不显示
+      });
+      tr.innerHTML = shown.map(m => renderMsg(m.role, m.content||m.text||'')).join('')
         || '<div style="color:var(--ink-3);text-align:center;padding:20px">（空对话）</div>';
       tr.scrollTop = tr.scrollHeight;
     }
