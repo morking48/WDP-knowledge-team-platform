@@ -1,0 +1,36 @@
+# WDP 团队工作台 · 团队根 config.yaml 关键片段（部署参考）
+# ────────────────────────────────────────────────────────────
+# 部署时把以下 model / custom_providers / fallback_providers 合入
+# 团队根 HERMES_HOME 的 config.yaml（/data/profiles/default/config.yaml）。
+# 新建成员账号时会自动 clone 团队根 config（含本 fallback 链），成员无需单独配。
+#
+# 依赖的 Key（走 K8s Secret，见 k8s/secret.example.yaml）：
+#   OPENROUTER_API_KEY  — 主模型 kimi-k3 + fallback GLM/DeepSeek
+#   N1N_CLAUDE_KEY      — fallback claude（n1n.ai 代理）
+
+model:
+  default: moonshotai/kimi-k3
+  provider: openrouter
+  max_tokens: 32000
+
+# n1n.ai Claude 代理（OpenAI 兼容），作为 claude fallback 的 provider 定义
+custom_providers:
+  - name: n1n-claude
+    base_url: https://llm-api.net/v1
+    api_key_env: N1N_CLAUDE_KEY
+    models:
+      claude-opus-4-6: {}
+      claude-opus-4-5-20251101: {}
+      claude-sonnet-4-5-20250929: {}
+
+# 自动 fallback 链：主模型不可用（限流429/过载529/服务错误503/连接失败）时依次降级
+# kimi-k3(主) → claude-opus-4-6(n1n) → GLM-5.2(OpenRouter) → DeepSeek-v4-pro(OpenRouter)
+fallback_providers:
+  - provider: n1n-claude
+    model: claude-opus-4-6
+    base_url: https://llm-api.net/v1
+    key_env: N1N_CLAUDE_KEY
+  - provider: openrouter
+    model: z-ai/glm-5.2
+  - provider: openrouter
+    model: deepseek/deepseek-v4-pro

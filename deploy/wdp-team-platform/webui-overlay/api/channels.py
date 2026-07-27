@@ -54,6 +54,12 @@ PROVIDERS = {
         'test_url': 'https://api.anthropic.com/v1/models',
         'models': ['claude-sonnet-4', 'claude-opus-4', 'claude-haiku-4'],
     },
+    'Claude(n1n代理)': {
+        'env': 'N1N_CLAUDE_KEY',
+        'base_url': 'https://llm-api.net/v1',   # OpenAI 兼容代理
+        'test_url': 'https://llm-api.net/v1/models',
+        'models': ['claude-opus-4-6', 'claude-opus-4-5-20251101', 'claude-sonnet-4-5-20250929', 'claude-sonnet-4-6'],
+    },
     '自定义OpenAI兼容': {
         'env': 'CUSTOM_OPENAI_API_KEY',
         'test_url': '',   # 用渠道自带 base_url

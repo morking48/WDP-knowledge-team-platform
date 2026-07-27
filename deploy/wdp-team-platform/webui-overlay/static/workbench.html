@@ -75,7 +75,8 @@
             <span style="font-size:11px;color:var(--ink-3)" id="chatModelHint"></span>
             <span id="chatTitleLabel" style="display:none;font-size:12px;font-weight:600;color:var(--ink-2);margin-left:12px"></span>
             <span id="chatBusyBar" style="display:none;align-items:center;gap:6px;font-size:11px;color:var(--brand-strong);margin-left:12px"><span class="busy-dot">●</span> agent 思考回复中…</span>
-            <button class="btn sm" id="chatToSignalBtn" style="margin-left:auto" title="把对话中的洞察沉淀为信号，提交入库审核">📥 沉淀为信号</button>
+            <button class="btn sm" id="chatRetryBtn" style="margin-left:auto" title="用上一条消息重新发送（模型/网络出错时不用重新输入）">🔄 重试上一条</button>
+            <button class="btn sm" id="chatToSignalBtn" title="把对话中的洞察沉淀为信号，提交入库审核">📥 沉淀为信号</button>
           </div>
           <div class="chat-transcript" id="transcript"></div>
           <div class="chat-composer">

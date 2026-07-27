@@ -231,6 +231,9 @@ async function loadSessions(){
   // R21：沉淀为信号按钮
   const tsb = $('#chatToSignalBtn');
   if(tsb && !tsb._bound){ tsb._bound=1; tsb.onclick = chatToSignal; }
+  // 重试上一条按钮：用上一条消息重新发送（模型/网络出错时不用重新输入）
+  const rtb = $('#chatRetryBtn');
+  if(rtb && !rtb._bound){ rtb._bound=1; rtb.onclick = retryLastMsg; }
   // 个人工作库侧栏
   loadChatWorkspaceList();
 }
@@ -561,6 +564,16 @@ function appendMsg(role, content){
 // ══════════════════════════════════════════════
 //  发送 + SSE 流式接收
 // ══════════════════════════════════════════════
+// 重试上一条：把上次发送的用户消息重新发一遍（模型/网络出错时免重输）
+let _lastUserMsg = '';
+function retryLastMsg(){
+  if(isCurrentStreaming()){ toast('当前对话正在回复中，请稍候'); return; }
+  if(!_lastUserMsg){ toast('还没有可重试的消息'); return; }
+  const ta = $('#composerInput');
+  if(ta){ ta.value = _lastUserMsg; autoGrow(); }
+  doSend();
+}
+
 async function doSend(){
   // R42：只阻塞"当前会话正在流式"的情况；其它会话在思考不影响当前会话输入
   if(isCurrentStreaming()){ toast('当前对话正在回复中，请稍候'); return; }
@@ -592,6 +605,7 @@ async function doSend(){
   if(pendingFiles.length){
     userText += '\n\n[已上传到工作库：' + pendingFiles.map(f=>f.name).join(', ') + ']';
   }
+  _lastUserMsg = msg;   // 记录纯文本消息，供"重试上一条"复用（不含附件提示）
   appendMsg('user', userText);
   ta.value = ''; autoGrow(); syncChips();
   // R40：真正发出消息 → 草稿态转正（会话将由后端落盘）
