@@ -11,25 +11,23 @@
 - **输出什么**（交付物模板）
 - **怎么算做好**（质量检查清单）
 
-## 产品团队首批 skill 清单（待建）
+## 团队 skill 清单（现役）
 
-| Skill | 干什么 | 状态 |
-|---|---|---|
-| `signal-intake` | 信号清洗：会议纪要/客户反馈/语音 → 结构化信号条目 | 待建 |
-| `requirement-triage` | 需求校验+建档：信号→候选需求→人工校验→入库 | 待建 |
-| `prd-writing` | PRD 撰写（面向 agent 的完整性：数据契约/状态/边界必填） | 待建 |
-| `design-handoff-to-dev` | 末端设计自动化：功能定稿→生成给研发的执行脚本/说明 | 待建 |
-| `release-tracking` | 节点跟踪：需求全生命周期状态更新+停滞提醒 | 待建 |
+| Skill | 干什么 |
+|---|---|
+| `signal-intake` | 信号清洗：会议纪要/客户反馈/语音 → 结构化信号条目 |
+| `requirement-triage` | 需求校验+建档：信号→候选需求→人工校验→入库 |
+| `design-converge` | 设计收敛工作流（🎯 设计模式激活）：批量拷问锁定意图→不可逆决策标风险→零歧义方案文档 |
+| `wdp-online-knowledge-sync` | WDP 在线知识源同步（飞书/企微/API 文档路由） |
+| `wdp-workbench-ui` | 工作台 UI 规范 |
 
-## 怎么新建一个 skill
+> 团队 skill 分布于工程 `skills/` 与 `hermes-home/skills/wdp-team/`；成员 agent 实时扫描加载。
+> admin 可在「团队 Agent」页用「技能助手」对话编辑、发布（发布前有 frontmatter 硬校验 + diff 展示）。
 
-最简单的方式：直接对 agent 说"把 XX 工作流程沉淀成一个 skill"，它会帮你起草，你确认后落到这个目录。
+## 怎么新建/编辑 skill
 
-或手动建目录：
-```
-skills/
-└── signal-intake/
-    └── SKILL.md
-```
+- **可视化（推荐）**：团队 Agent 页 → 团队技能面板 → 「＋ 新建技能」或点某 skill 的「🤖 技能助手」对话编辑 → 存草稿 → 「🚀 发布」同步成员。
+- **对话沉淀**：对 agent 说"把 XX 工作流程沉淀成一个 skill"，它帮起草。
+- **手动**：建目录 `skills/<name>/SKILL.md`，含 YAML frontmatter（name/description 必填）+ 正文。
 
-SKILL.md 模板见各 skill 目录内的示例。
+内置 4 个核心 skill（signal-intake/requirement-triage/wdp-online-knowledge-sync/wdp-workbench-ui）受保护，不可删除。

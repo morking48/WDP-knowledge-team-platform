@@ -91,8 +91,13 @@ def list_skills(handler) -> dict:
     if not u or not home:
         return {'error': '未登录'}, 401
     team = []
+    _seen = set()
     for td in _team_skill_dirs():
-        team += _scan_dir(td, 'team', enabled=True)
+        for s in _scan_dir(td, 'team', enabled=True):
+            if s['dir'] in _seen:      # 同名 skill 可能在多个团队目录出现，去重（与 admin 列表口径一致）
+                continue
+            _seen.add(s['dir'])
+            team.append(s)
     pbase = _personal_base(home)
     personal = _scan_dir(pbase, 'personal', enabled=True)
     personal += _scan_dir(pbase / '.disabled', 'personal', enabled=False)

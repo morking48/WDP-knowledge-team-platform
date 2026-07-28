@@ -66,6 +66,12 @@ def _git_commit(msg: str):
                        capture_output=True, timeout=15)
     except Exception as e:
         logger.warning('projects git commit failed: %s', e)
+    # 项目数据变了 → 实时刷新知识库索引（对话 agent 导航用）
+    try:
+        from api.team_tasks import refresh_index
+        refresh_index()
+    except Exception as e:
+        logger.debug('refresh_index after project write failed: %s', e)
 
 
 def _next_id(prefix: str, scan_dirs: list) -> str:

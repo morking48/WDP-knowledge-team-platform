@@ -139,6 +139,35 @@ def save_team_skill_draft(skill_dir: str, content: str) -> dict:
         return {'error': f'保存失败: {e}'}, 500
 
 
+def _validate_skill_frontmatter(text: str) -> dict:
+    """校验 SKILL.md 的 YAML frontmatter：必须合法 + 含非空 name/description。
+
+    成员 agent 靠 frontmatter 的 name/description 检索加载 skill，缺失/格式错会导致
+    该 skill 检索失效，故发布前硬校验（对齐企业规范 Schema 强约束）。
+    """
+    t = (text or '').lstrip()
+    if not t.startswith('---'):
+        return {'ok': False, 'message': 'SKILL.md 必须以 YAML frontmatter（--- 开头）'}
+    # 提取 frontmatter 块
+    m = re.match(r'^---\s*\n(.*?)\n---', t, re.DOTALL)
+    if not m:
+        return {'ok': False, 'message': 'frontmatter 格式错误：缺少闭合的 --- 分隔线'}
+    fm_text = m.group(1)
+    fields = {}
+    for line in fm_text.splitlines():
+        if ':' in line and not line.strip().startswith('#') and not line.startswith((' ', '\t', '-')):
+            k, v = line.split(':', 1)
+            fields[k.strip()] = v.split('#')[0].strip().strip('"\'')
+    missing = [k for k in ('name', 'description') if not fields.get(k)]
+    if missing:
+        return {'ok': False, 'message': f'frontmatter 缺少必填字段：{", ".join(missing)}（成员 agent 靠它检索加载技能）'}
+    # 正文非空（frontmatter 之后要有内容）
+    body = t[m.end():].strip()
+    if len(body) < 10:
+        return {'ok': False, 'message': 'SKILL.md 正文过短或为空，请补充技能内容（触发条件/步骤/注意事项）'}
+    return {'ok': True}
+
+
 def publish_team_skill(skill_dir: str, content: str | None = None) -> dict:
     """发布：把草稿（或传入内容）写回正式 SKILL.md，成员实时同步。
 
@@ -156,9 +185,10 @@ def publish_team_skill(skill_dir: str, content: str | None = None) -> dict:
             text = None
     if not text or not text.strip():
         return {'error': '没有可发布的内容（先保存草稿或传入内容）'}, 400
-    # 基本校验：必须是含 frontmatter 的 SKILL.md
-    if not text.lstrip().startswith('---'):
-        return {'error': 'SKILL.md 必须以 YAML frontmatter（--- 开头）', 'invalid': True}, 422
+    # frontmatter 硬校验：必须是合法 YAML frontmatter 且含 name/description（成员靠它检索加载）
+    vr = _validate_skill_frontmatter(text)
+    if not vr['ok']:
+        return {'error': vr['message'], 'invalid': True}, 422
     md = d / 'SKILL.md'
     try:
         # 备份原文件到草稿目录（不污染 skill 目录本身，防误发布可回溯）
@@ -195,9 +225,10 @@ def discard_team_skill_draft(skill_dir: str) -> dict:
 
 
 # ── 新增 / 删除团队 skill ────────────────────────────────────────────
-# 内置四个核心 skill 受保护，不可删除（团队工作流依赖）
+# 内置核心 skill 受保护，不可删除（团队工作流依赖）
 _PROTECTED_SKILLS = {'signal-intake', 'requirement-triage',
-                     'wdp-online-knowledge-sync', 'wdp-workbench-ui'}
+                     'wdp-online-knowledge-sync', 'wdp-workbench-ui',
+                     'design-converge'}
 
 _DIR_RE = re.compile(r'^[a-z0-9][a-z0-9-_]{1,63}$')
 

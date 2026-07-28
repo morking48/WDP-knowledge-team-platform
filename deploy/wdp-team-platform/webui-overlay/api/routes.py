@@ -5244,6 +5244,7 @@ def handle_get(handler, parsed) -> bool:
         res = _ta.get_team_agent()
         res['model_options'] = _ta.model_options().get('providers', {})
         res['published_at'] = _ta.get_publish_status()
+        res['snapshots'] = _ta.list_soul_snapshots()
         return j(handler, res)
 
     # ── 团队 Skill 编辑（admin）──────────────────────────────────────
@@ -6099,15 +6100,14 @@ def handle_post(handler, parsed) -> bool:
                         res = _ta.publish_team_rules()
             elif p == "/api/admin/team-agent/model":
                 res = _ta.save_team_model(body.get("provider") or "", body.get("model") or "")
+            elif p == "/api/admin/team-agent/rollback-rules":
+                res = _ta.rollback_soul(body.get("snapshot") or "")
             elif p == "/api/admin/team-agent/merge-rule":
                 from api import merge_agent as _ma
                 res = _ma.save_merge_rule(body.get("rule") or "")
             elif p == "/api/admin/team-agent/review-rule":
                 from api import merge_agent as _ma
                 res = _ma.save_review_rule(body.get("rule") or "")
-            elif p == "/api/admin/team-agent/review-assist":
-                from api import merge_agent as _ma
-                res = _ma.analyze_review(body.get("user") or "", body.get("file") or "")
             elif p == "/api/admin/team-agent/record-decision":
                 from api import wdp_agent_log as _al
                 res = _al.record_decision(body.get("kind") or "", body.get("entry") or {})

@@ -318,6 +318,13 @@ def approve(profile: str, fname: str, final_name: str | None,
     except Exception as e:
         logger.warning("approve notify submitter failed: %s", e)
 
+    # 入库成功 → 实时刷新知识库索引（对话 agent 导航用）
+    try:
+        from api.team_tasks import refresh_index
+        refresh_index()
+    except Exception as e:
+        logger.debug('refresh_index after approve failed: %s', e)
+
     return {'ok': True, 'final_path': f'{category}/{target_name}', 'git': git_msg}
 
 

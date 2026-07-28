@@ -75,7 +75,6 @@
             <span style="font-size:11px;color:var(--ink-3)" id="chatModelHint"></span>
             <span id="chatBusyBar" style="display:none;align-items:center;gap:6px;font-size:11px;color:var(--brand-strong);margin-left:12px"><span class="busy-dot">●</span> agent 思考回复中…</span>
             <button class="btn sm" id="chatRetryBtn" style="margin-left:auto" title="用上一条消息重新发送（模型/网络出错时不用重新输入）">🔄 重试上一条</button>
-            <button class="btn sm" id="chatToSignalBtn" title="把内容提交入库审核（信号/需求/设计）">📤 提交入库</button>
           </div>
           <div class="chat-transcript" id="transcript"></div>
           <div class="chat-composer">
@@ -86,9 +85,8 @@
               <button class="send" title="发送"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg></button>
             </div>
             <div class="hintbar">
-              <button class="chip" data-tpl="帮我清洗一段原始信息成信号：\n\n（粘贴会议纪要 / 客户反馈 / 聊天记录在这里）">📥 清洗信号</button>
-              <button class="chip" data-tpl="列出我名下所有的需求，按状态和优先级汇总">📋 我的需求</button>
-              <button class="chip" data-tpl="帮我写一份产品设计稿，主题是：">📐 写 PRD</button>
+              <button class="chip mode-chip" id="designModeBtn" title="设计模式：激活「设计收敛」工作流——批量拷问锁定意图 → 不可逆决策标风险 → 产出零歧义方案文档（可入库为设计）。适合做产品规划 / 写 PRD / 方案编制。">🎯 设计模式</button>
+              <button class="chip mode-chip" id="signalModeBtn" title="信号清洗：激活 signal-intake 技能，把会议纪要 / 客户反馈 / 聊天记录清洗成规范信号并提交入库">📥 清洗信号</button>
               <button class="chip" data-tpl="问一个 WDP 产品知识问题：">📚 问产品知识</button>
             </div>
           </div>
@@ -333,6 +331,7 @@
         <div class="panel-head"><h2>👥 团队规则（团队 SOUL）</h2><span class="hint" id="teamPubHint">保存=存草稿母本 · 发布=同步到所有成员 agent</span>
           <div style="margin-left:auto;display:flex;gap:8px">
             <button class="btn sm" id="rulesAgentBtn">🤖 规则助手</button>
+            <button class="btn sm" id="rollbackSoulBtn" style="display:none" title="把团队规则恢复到上一份快照（规则助手改坏时的安全网）">↩ 回滚上一版</button>
             <button class="btn sm" id="saveTeamSoulBtn">💾 保存</button>
             <button class="btn sm primary" id="publishTeamSoulBtn">🚀 发布到成员</button>
           </div>

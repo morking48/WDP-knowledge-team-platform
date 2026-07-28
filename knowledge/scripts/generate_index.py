@@ -68,6 +68,24 @@ def main():
             items.append(entry(f, fm, f'{cat}/'))
         head = f'# {label}（活跃 {len(items)}' + (f'，已流转 {done}' if done else '') + '）'
         sections.append(head + '\n\n' + ('\n'.join(items) if items else '（暂无）'))
+    # ── 项目分区（子目录结构，单独扫）──
+    pr = os.path.join(root, 'projects')
+    prj_lines = []
+    if os.path.isdir(pr):
+        for pd in sorted(os.listdir(pr)):
+            pdir = os.path.join(pr, pd)
+            pm = os.path.join(pdir, 'project.md')
+            if not os.path.isdir(pdir) or pd.startswith(('_', '.')) or not os.path.isfile(pm):
+                continue
+            fm = parse_fm(pm)
+            rn = len([x for x in os.listdir(os.path.join(pdir, 'requirements'))
+                      if x.endswith('.md') and not x.startswith('_')]) if os.path.isdir(os.path.join(pdir, 'requirements')) else 0
+            dn = len([x for x in os.listdir(os.path.join(pdir, 'deliverables'))
+                      if x.endswith('.md') and not x.startswith('_')]) if os.path.isdir(os.path.join(pdir, 'deliverables')) else 0
+            title = fm.get('title') or pd
+            prj_lines.append(f'* [{title}](projects/{pd}/project.md)（客户:{fm.get("customer","—")} · 阶段:{fm.get("phase","—")} · 状态:{fm.get("status","—")} · 需求{rn}/材料{dn}）')
+    prj_section = f'# 📦 项目（{len(prj_lines)} 个）\n\n' + ('\n'.join(prj_lines) if prj_lines else '（暂无项目）')
+    sections.append(prj_section)
     idx = (f'<!-- 由 scripts/generate_index.py 自动生成 · {today} · 勿手改 -->\n'
            f'# 团队知识库索引\n\n先读本索引再打开具体文件（渐进披露，省上下文）。\n\n'
            + '\n\n'.join(sections)

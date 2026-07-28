@@ -112,13 +112,11 @@ async function doApprove(){
       user:_rvSel._profile, file:_rvSel.file, final_name:finalName, note
     })});
     toast('已入库到 '+(d.final_path||''));
-    // 简化session：记录审核决策(AI建议 vs 管理员通过)，供审核助手few-shot学习
-    const adv = window.__wbReviewAdvice || {};
+    // 记录审核决策供 few-shot 学习（基础入口无 AI 分析，ai_advice 留空；对话版审核才带 AI 建议）
     api('/api/admin/team-agent/record-decision', {method:'POST', body:JSON.stringify({
       kind:'review', entry:{title:_rvSel.title, category:_rvSel.category, decision:'通过',
-        ai_advice:(adv.recommendation||'')+(adv.reason?('·'+adv.reason):''), reason:note||''}
+        ai_advice:'', reason:note||''}
     })}).catch(()=>{});
-    window.__wbReviewAdvice = null;
     W.LOADED.board = false; if(window.wbRefreshRailCnt)window.wbRefreshRailCnt();  // 工作台需刷新
     window.loadReview();
   }catch(e){
@@ -140,13 +138,11 @@ async function doReject(){
       user:_rvSel._profile, file:_rvSel.file, reason
     })});
     toast('已驳回');
-    // 简化session：记录驳回决策
-    const adv = window.__wbReviewAdvice || {};
+    // 记录驳回决策（基础入口无 AI 分析，ai_advice 留空）
     api('/api/admin/team-agent/record-decision', {method:'POST', body:JSON.stringify({
       kind:'review', entry:{title:_rvSel.title, category:_rvSel.category, decision:'驳回',
-        ai_advice:(adv.recommendation||'')+(adv.reason?('·'+adv.reason):''), reason}
+        ai_advice:'', reason}
     })}).catch(()=>{});
-    window.__wbReviewAdvice = null;
     window.loadReview();
   }catch(e){ toast('驳回失败：'+e.message, true); }
 }
@@ -292,7 +288,22 @@ window.loadTeamAgent = async function(){
   };
   // #8：发布——把团队规则同步进每个成员 profile 的 SOUL（幂等块替换）
   const rulesBtn = $('#rulesAgentBtn');
-  if(rulesBtn) rulesBtn.onclick = ()=>{ if(window.wbOpenRulesDialog) window.wbOpenRulesDialog(); };
+  if(rulesBtn) rulesBtn.onclick = ()=>{ if(window.wbOpenRulesDialog) window.wbOpenRulesDialog($('#teamSoulText') ? $('#teamSoulText').value : (d.soul||'')); };
+  // 回滚：把团队规则恢复到上一份快照（规则助手改坏时的安全网）
+  const rbBtn = $('#rollbackSoulBtn');
+  if(rbBtn){
+    const snaps = d.snapshots || [];
+    rbBtn.style.display = snaps.length ? '' : 'none';
+    rbBtn.onclick = async ()=>{
+      if(!snaps.length){ toast('暂无历史快照可回滚', true); return; }
+      if(!(await wbConfirm(`回滚会把团队规则母本恢复到上一份快照（${snaps[0].name}）。回滚后需再点「发布」才生效到成员。确认回滚？`))) return;
+      try{
+        const r = await api('/api/admin/team-agent/rollback-rules', {method:'POST', body:'{}'});
+        toast(r.message || '已回滚');
+        W.LOADED.teamagent = false; window.loadTeamAgent();
+      }catch(e){ toast('回滚失败：'+e.message, true); }
+    };
+  }
   const pubBtn = $('#publishTeamSoulBtn');
   if(pubBtn) pubBtn.onclick = async ()=>{
     if(!(await wbConfirm('发布会把当前团队规则同步到所有成员 agent（覆盖成员 SOUL 中的团队规则块，不动个人个性部分）。确认发布？'))) return;

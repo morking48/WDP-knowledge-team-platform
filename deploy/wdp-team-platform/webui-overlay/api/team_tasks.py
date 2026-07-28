@@ -3,8 +3,9 @@ WDP 团队工作台 · 主 Agent 定时任务管理（team_tasks）.
 
 设计：
   - 任务配置存 knowledge 同级的 team-tasks.json（部署时放共享卷 PVC，多副本读同一份）
-  - 4 个内置任务（确定性脚本逻辑，复用 main_agent_tasks 的实现）：
-      signal-clean / stagnant-req / weekly-report / session-archive
+  - 6 个内置任务（确定性脚本逻辑，机械化固定工作，无 LLM）：
+      signal-clean / stagnant-req / weekly-report / upload-review / purge-deleted / refresh-index
+      提醒类（signal-clean/stagnant-req/weekly-report）扫描后主动通知 admin/负责人。
   - 支持 admin 新建「自定义任务」：一段自然语言 prompt（记录 + 预留接主 Agent 执行）
   - 每个任务：enabled(默认 false) / schedule(cron) / params / last_run / last_result
 
@@ -62,13 +63,6 @@ _BUILTIN = {
         'builtin': True,
         'params': {},
     },
-    'session-archive': {
-        'name': 'session 压缩归档',
-        'desc': '扫 profiles 里 ≥30 天未活跃的 session，输出归档候选',
-        'schedule': '0 3 * * 0',        # 每周日 3:00
-        'builtin': True,
-        'params': {'threshold_days': 30},
-    },
     'upload-review': {
         'name': '上传文件处置提醒',
         'desc': '扫各成员对话上传的临时文件，通知管理员处置（尤其未转化进工作台的）',
@@ -82,6 +76,13 @@ _BUILTIN = {
         'schedule': '0 4 * * *',        # 每天 4:00
         'builtin': True,
         'params': {'retention_days': 30},
+    },
+    'refresh-index': {
+        'name': '刷新知识库索引',
+        'desc': '重新生成 knowledge/index.md（对话agent导航用）；写操作已实时触发，此为定时兜底',
+        'schedule': '0 */2 * * *',       # 每 2 小时兜底刷新
+        'builtin': True,
+        'params': {},
     },
 }
 
@@ -120,16 +121,20 @@ def load_config() -> dict:
         return cfg
     try:
         cfg = json.loads(p.read_text(encoding='utf-8'))
-        # 补齐：确保 4 个内置任务都在（升级兼容）
-        have = {t['id'] for t in cfg.get('tasks', [])}
+        tasks = cfg.get('tasks', [])
+        # 剔除已废弃的内置任务（代码里 _BUILTIN 已删的，如 session-archive）；自定义任务保留
+        tasks = [t for t in tasks if t.get('type') != 'builtin' or t.get('id') in _BUILTIN]
+        # 补齐：确保当前所有内置任务都在（升级兼容）
+        have = {t['id'] for t in tasks}
         for tid, spec in _BUILTIN.items():
             if tid not in have:
-                cfg.setdefault('tasks', []).append({
+                tasks.append({
                     'id': tid, 'name': spec['name'], 'desc': spec['desc'],
                     'type': 'builtin', 'enabled': False, 'schedule': spec['schedule'],
                     'params': dict(spec['params']), 'prompt': '',
                     'last_run': None, 'last_result': None, 'last_status': None,
                 })
+        cfg['tasks'] = tasks
         return cfg
     except Exception as e:
         logger.warning('load team-tasks.json failed: %s', e)
@@ -298,6 +303,21 @@ def run_task(tid: str, *, triggered_by: str = 'manual') -> dict:
     return {'ok': status != 'error', 'status': status, 'result': result_text, 'ran_at': t['last_run']}
 
 
+def _notify_admins(message: str) -> int:
+    """给所有管理员发站内通知（照 upload-review 已验证的模式）。返回通知数。"""
+    n = 0
+    try:
+        from api import knowledge_ops as _ops
+        from api import users as _users
+        for u in _users.list_users():
+            if u.get('role') == 'admin':
+                _ops.notify_member(u.get('username'), message, 'system')
+                n += 1
+    except Exception as e:
+        logger.debug('notify admins failed: %s', e)
+    return n
+
+
 def _run_builtin(tid: str, params: dict) -> str:
     """执行内置任务，复用 main_agent_tasks 的确定性逻辑（在进程内实现，避免依赖外部脚本路径）。"""
     from api import knowledge as _kb
@@ -333,6 +353,9 @@ def _run_builtin(tid: str, params: dict) -> str:
                        ensure_ascii=False, indent=2), encoding='utf-8')
         lines = [f"发现 {len(pending)} 条待 triage 信号："]
         lines += [f"  [{p['urgency']}] {p['id']} · {p['title']}" for p in pending]
+        # 有待处理信号才通知 admin（0 条不打扰）
+        if pending:
+            _notify_admins(f'📥 信号清洗提醒：有 {len(pending)} 条信号待 triage 处理，请到工作台信号页处置。')
         return '\n'.join(lines)
 
     if tid == 'stagnant-req':
@@ -352,6 +375,21 @@ def _run_builtin(tid: str, params: dict) -> str:
                        ensure_ascii=False, indent=2), encoding='utf-8')
         lines = [f"发现 {len(stale)} 条停滞需求（≥{stale_days} 天）："]
         lines += [f"  [{s['stale_days']}d] {s['id']} · {s['title']} (@{s['owner']})" for s in stale]
+        # 通知：按负责人分组各自推送 + admin 汇总（0 条不打扰）
+        if stale:
+            by_owner = {}
+            for s in stale:
+                ow = s.get('owner', '')
+                if ow and ow not in ('未分配', '待分配', ''):
+                    by_owner.setdefault(ow, []).append(s)
+            try:
+                from api import knowledge_ops as _ops
+                for ow, items in by_owner.items():
+                    titles = '、'.join(f"{i['id']}「{i['title']}」({i['stale_days']}天)" for i in items[:5])
+                    _ops.notify_member(ow, f'⏳ 需求停滞提醒：你名下有 {len(items)} 条需求 ≥{stale_days} 天未更新：{titles}。请跟进或更新状态。', 'system')
+            except Exception as e:
+                logger.debug('stagnant-req notify owner failed: %s', e)
+            _notify_admins(f'⏳ 需求停滞汇总：共 {len(stale)} 条需求 ≥{stale_days} 天未更新（已分别提醒负责人）。')
         return '\n'.join(lines)
 
     if tid == 'weekly-report':
@@ -372,33 +410,8 @@ def _run_builtin(tid: str, params: dict) -> str:
         report = '\n'.join(rep)
         out = tracking / f"weekly-{time.strftime('%Y%m%d')}.md"
         out.write_text(report, encoding='utf-8')
+        _notify_admins(f'📊 团队周报已生成（tracking/{out.name}）：信号 {stats.get("signals",0)} · 需求 {stats.get("requirements",0)} · 设计 {stats.get("designs",0)}。')
         return f'周报已生成：tracking/{out.name}\n\n' + report
-
-    if tid == 'session-archive':
-        threshold = int(params.get('threshold_days', 30))
-        try:
-            from api.profiles import _DEFAULT_HERMES_HOME
-            profiles_dir = Path(_DEFAULT_HERMES_HOME) / 'profiles'
-        except Exception:
-            profiles_dir = None
-        archived = []
-        if profiles_dir and profiles_dir.is_dir():
-            for ud in profiles_dir.iterdir():
-                if not ud.is_dir():
-                    continue
-                for sd in [ud / 'sessions', ud / 'webui' / 'sessions']:
-                    if sd.is_dir():
-                        for s in sd.glob('*.json'):
-                            if s.name.startswith('_'):
-                                continue
-                            days = (now - s.stat().st_mtime) / 86400
-                            if days >= threshold:
-                                archived.append({'user': ud.name, 'session': s.name,
-                                                 'days_inactive': int(days)})
-        (tracking / 'session-archive-candidates.json').write_text(
-            json.dumps({'ran_at': today, 'threshold_days': threshold, 'candidates': archived},
-                       ensure_ascii=False, indent=2), encoding='utf-8')
-        return f'发现 {len(archived)} 个 ≥{threshold} 天未活跃 session（候选，未实际移动）'
 
     if tid == 'upload-review':
         # P3：扫各成员 workspace/uploads 里的临时文件，通知管理员处置
@@ -451,7 +464,34 @@ def _run_builtin(tid: str, params: dict) -> str:
         r = _ops.purge_expired_deleted(int(params.get('retention_days', 30)))
         return f"清理已删除内容：真删 {r.get('purged',0)} 个超期文件"
 
+    if tid == 'refresh-index':
+        return refresh_index()
+
     return f'未知内置任务 {tid}'
+
+
+def refresh_index() -> str:
+    """重新生成 knowledge/index.md（渐进披露索引）。
+
+    对话 agent 靠 index.md 导航知识库；数据增删后调用本函数保持索引最新。
+    被内置定时任务 refresh-index 定时兜底调用，也被入库/项目写操作实时触发。
+    """
+    import subprocess
+    from api import knowledge as _kb
+    root = _kb.get_knowledge_root()
+    if not root:
+        return 'knowledge 根不可用'
+    gen = root / 'scripts' / 'generate_index.py'
+    if not gen.is_file():
+        return f'generate_index.py 不存在: {gen}'
+    try:
+        r = subprocess.run([sys.executable, str(gen), str(root)],
+                           capture_output=True, text=True, timeout=30)
+        out = (r.stdout or r.stderr or '').strip()
+        return out or 'index 已刷新'
+    except Exception as e:
+        logger.warning('refresh_index failed: %s', e)
+        return f'刷新索引失败: {e}'
 
 
 def _scheduler_enabled() -> bool:

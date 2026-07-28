@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -68,10 +69,94 @@ def get_team_agent() -> dict:
     }
 
 
+def _snapshot_dir() -> Path:
+    d = _team_home() / '.soul-snapshots'
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _snapshot_soul(reason: str = '') -> str | None:
+    """把当前团队 SOUL.md 存一份带时间戳的快照（发布/覆盖前调用，供回滚）。
+
+    只保留最近 20 份，防无限膨胀。返回快照文件名。
+    """
+    sp = _soul_path()
+    if not sp.is_file():
+        return None
+    try:
+        ts = time.strftime('%Y%m%d-%H%M%S') + f'-{int(time.time()*1000)%1000:03d}'
+        snap = _snapshot_dir() / f'{ts}.md'
+        snap.write_text(sp.read_text(encoding='utf-8'), encoding='utf-8')
+        # 清理：只留最近 20 份
+        snaps = sorted(_snapshot_dir().glob('*.md'))
+        for old in snaps[:-20]:
+            try:
+                old.unlink()
+            except Exception:
+                pass
+        return snap.name
+    except Exception as e:
+        logger.warning('snapshot soul failed: %s', e)
+        return None
+
+
+def list_soul_snapshots() -> list[dict]:
+    """列出快照（最新在前），供回滚选择。"""
+    out = []
+    for f in sorted(_snapshot_dir().glob('*.md'), reverse=True):
+        try:
+            out.append({'name': f.stem, 'size': f.stat().st_size,
+                        'preview': f.read_text(encoding='utf-8')[:80]})
+        except Exception:
+            pass
+    return out
+
+
+def rollback_soul(snapshot_name: str = '') -> dict:
+    """回滚团队 SOUL 到指定快照（不传则回滚到最近一份历史快照）。
+
+    注意：不传 snapshot_name 时，回滚目标是"最近的、且内容与当前不同的"快照——
+    避免回滚到刚保存时留下的、内容等于当前的快照（那样等于没回滚）。
+    回滚本身也先存一份快照（回滚可再回滚）。
+    """
+    snaps = sorted(_snapshot_dir().glob('*.md'), reverse=True)
+    if not snaps:
+        return {'error': '没有可回滚的历史快照'}, 404
+    sp = _soul_path()
+    cur = sp.read_text(encoding='utf-8') if sp.is_file() else ''
+    if snapshot_name:
+        target = _snapshot_dir() / (snapshot_name + '.md')
+        if not target.is_file():
+            return {'error': f'快照 {snapshot_name} 不存在'}, 404
+    else:
+        # 找最近一份内容与当前不同的快照（跳过等于当前的）
+        target = None
+        for s in snaps:
+            try:
+                if s.read_text(encoding='utf-8') != cur:
+                    target = s
+                    break
+            except Exception:
+                pass
+        if target is None:
+            return {'error': '没有与当前版本不同的历史快照可回滚'}, 404
+    try:
+        # 先把目标内容读进内存（避免下面存快照时若同名覆盖了 target）
+        restored = target.read_text(encoding='utf-8')
+        # 回滚前给当前版存一份快照（回滚可再回滚）
+        _snapshot_soul('before-rollback')
+        sp.write_text(restored, encoding='utf-8')
+        return {'ok': True, 'restored_from': target.stem,
+                'message': f'已回滚团队规则到快照 {target.stem}。如需生效到成员，请再点「发布」。'}
+    except Exception as e:
+        return {'error': f'回滚失败: {e}'}, 500
+
+
 def save_team_soul(content: str) -> dict:
-    """写团队规则 SOUL.md。"""
+    """写团队规则 SOUL.md（写前自动快照当前版，供回滚）。"""
     sp = _soul_path()
     try:
+        _snapshot_soul('before-save')   # 覆盖前留快照
         sp.parent.mkdir(parents=True, exist_ok=True)
         sp.write_text(content or '', encoding='utf-8')
         return {'ok': True}

@@ -147,10 +147,11 @@ COPY --chown=root:root webui-overlay/ /apptoo/
 # 7) 团队 skills（个人中心"团队技能"只读展示 + agent 加载）→ 镜像内置
 COPY --chown=root:root team-config/skills/ /opt/hermes-team-skills/
 
-# 8) agent 提交/画像/个人skill 沉淀脚本 → 镜像内置（启动脚本会同步到 PVC 的 hermes-home/scripts/）
+# 8) agent 提交/画像/个人skill 沉淀 + 知识库查询脚本 → 镜像内置（启动脚本会同步到 PVC 的 hermes-home/scripts/）
 COPY --chown=root:root scripts/submit_review.py \
      scripts/update_member_profile.py \
      scripts/save_personal_skill.py \
+     scripts/query_knowledge.py \
      /opt/wdp-scripts/
 
 # -----------------------------------------------------------------------------

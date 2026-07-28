@@ -29,7 +29,14 @@ function anyStreaming(){ return Object.values(STREAMS).some(s=>s.busy); }
 
 // ── 极简 markdown 渲染（够用：粗体/代码/换行/列表）──
 function renderMd(text){
-  let s = h(text);
+  // 🎯 设计模式：先把 ```choices JSON 块抽成占位符，避免后续 markdown 规则（\n→<br> 等）污染生成的控件 HTML
+  const cards = [];
+  let src = String(text).replace(/```choices\s*\n([\s\S]*?)```/g, (m, c)=>{
+    try{ cards.push(renderChoicesCard(JSON.parse(c))); }
+    catch(_){ cards.push(`<pre style="background:rgba(0,0,0,.05);padding:10px;border-radius:8px;overflow-x:auto;font-size:12px">${h(c)}</pre>`); }
+    return `\u0000CHOICES${cards.length-1}\u0000`;
+  });
+  let s = h(src);
   s = s.replace(/```([\s\S]*?)```/g, (m,c)=>`<pre style="background:rgba(0,0,0,.05);padding:10px;border-radius:8px;overflow-x:auto;font-size:12px">${c}</pre>`);
   s = s.replace(/`([^`]+)`/g, '<code style="background:rgba(0,0,0,.06);padding:1px 5px;border-radius:4px;font-size:12px">$1</code>');
   s = s.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
@@ -37,7 +44,100 @@ function renderMd(text){
   s = s.replace(/^## (.+)$/gm, '<div style="font-weight:700;font-size:15px;margin:10px 0 5px">$1</div>');
   s = s.replace(/^- (.+)$/gm, '<div style="margin-left:8px">• $1</div>');
   s = s.replace(/\n/g, '<br>');
+  // 塞回 choices 卡片（占位符经 h() 转义后 \u0000 保持不变，可安全匹配）
+  s = s.replace(/\u0000CHOICES(\d+)\u0000/g, (m, i)=>cards[+i] || '');
   return s;
+}
+
+// 设计收敛：选择题卡片（qid/question/why/multi/irrev/options[{label,default,risk}]）
+// 顶部模式横幅：激活能力模式后，对话区顶部显示醒目提示（让"开/关"确定可见）
+function renderModeBanner(){
+  let banner = document.getElementById('modeBanner');
+  const mode = window._activeMode;
+  if(!mode){ if(banner) banner.remove(); return; }
+  const cfg = {
+    design: {icon:'🎯', text:'设计收敛模式', desc:'agent 正按流程推进：批量拷问 → 不可逆决策 → 零歧义方案文档'},
+    signal: {icon:'📥', text:'信号清洗模式', desc:'粘贴原始信息，agent 会清洗成规范信号并提交入库审核'},
+  }[mode];
+  const html = `<span style="font-weight:700">${cfg.icon} ${cfg.text}</span>
+    <span style="font-size:11.5px;color:var(--ink-3);margin-left:8px">${cfg.desc}</span>
+    <button id="modeBannerExit" style="margin-left:auto;background:none;border:none;color:var(--ink-3);cursor:pointer;font-size:12px">✕ 退出</button>`;
+  if(!banner){
+    banner = document.createElement('div');
+    banner.id = 'modeBanner';
+    banner.style.cssText = 'display:flex;align-items:center;gap:6px;padding:8px 14px;margin:0 0 8px;border-radius:10px;background:var(--brand-soft);border:1px solid var(--brand-strong);font-size:13px';
+    const tr = document.getElementById('transcript');
+    if(tr && tr.parentNode) tr.parentNode.insertBefore(banner, tr);
+  }
+  banner.innerHTML = html;
+  const ex = document.getElementById('modeBannerExit');
+  if(ex) ex.onclick = ()=>{ window._activeMode=null; renderModeBanner();
+    ['designModeBtn','signalModeBtn'].forEach(id=>{ const b=document.getElementById(id); if(b){b.style.background='';b.style.color='';b.style.borderColor='';} });
+    const t=document.getElementById('composerInput'); if(t) t.placeholder='和你的 agent 对话… 或 @成员名 发快速通知；可拖文件上传';
+  };
+}
+
+// 模式激活时，把该模式的流程规则拼进发给 agent 的消息（强制注入，不靠 LLM 读 SOUL）
+function _modeInjectedMessage(mode, msg){
+  if(mode === 'design'){
+    return `[设计模式·请严格按团队 skill「design-converge」的设计收敛流程执行本轮及后续对话]\n`
+      + `务必：①一次性批量出 5-7 道选择题（用 \`\`\`choices JSON 代码块，前端会渲染成可点击控件），不要一问一答挤牙膏 ②不可逆决策单独出题并标注每个选项的风险 ③关键节点停下来让我确认（闸门）④最终产出零歧义的完整方案文档，问我是否入库为设计。\n`
+      + `我的输入：${msg}`;
+  }
+  if(mode === 'signal'){
+    return `[信号清洗模式·请加载并按团队 skill「signal-intake」执行]\n`
+      + `把我下面提供的原始信息清洗成规范信号：提炼要点、判断类别/紧急度/可信度、补全 frontmatter 字段，整理好后用 submit_review.py 提交入库审核（category=signals）。\n`
+      + `原始信息：${msg}`;
+  }
+  return msg;
+}
+
+function renderChoicesCard(q){
+  const qid = h(q.qid||'');
+  const irrev = q.irrev ? '<span style="background:var(--danger);color:#fff;font-size:10px;padding:2px 8px;border-radius:999px;margin-left:6px">不可逆 · 值得选</span>' : '';
+  const multi = !!q.multi;
+  const opts = (q.options||[]).map((o,i)=>{
+    const dft = o.default ? ' data-default="1"' : '';
+    const dftLabel = o.default ? '<span style="color:#3D7A4E;font-size:10px">（默认）</span>' : '';
+    const risk = o.risk ? `<div class="ch-risk" style="display:none;font-size:11px;color:#9E5A33;background:#FAEDE5;padding:4px 8px;border-radius:6px;margin-top:4px">⚑ 风险：${h(o.risk)}</div>` : '';
+    return `<div style="display:inline-block;vertical-align:top;margin:0 6px 6px 0"><button class="ch-opt" data-qid="${qid}" data-i="${i}" data-multi="${multi?1:0}"${dft}
+      style="padding:5px 13px;border-radius:999px;border:1px ${o.default?'dashed #3D7A4E':'solid var(--line)'};background:#fff;cursor:pointer;font-size:12.5px;color:var(--ink-2)">${h(o.label)}${dftLabel}</button>${risk}</div>`;
+  }).join('');
+  return `<div class="choices-card" data-qid="${qid}" data-multi="${multi?1:0}" style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:8px 0;background:rgba(255,255,255,.7)">
+    <div style="font-weight:700;font-size:13px;margin-bottom:2px"><span style="color:var(--brand-strong);font-size:11px;letter-spacing:.1em">${qid}</span> ${h(q.question||'')}${irrev}</div>
+    ${q.why?`<div style="font-size:11.5px;color:var(--ink-3);margin-bottom:6px">${h(q.why)}</div>`:''}
+    <div>${opts}</div></div>`;
+}
+
+// 选项点击（事件委托，绑在 transcript 上）：选中高亮+显示风险；answers 存 window._chAnswers
+window._chAnswers = window._chAnswers || {};
+function onChoiceClick(e){
+  const btn = e.target.closest('.ch-opt'); if(!btn) return;
+  const card = btn.closest('.choices-card'); if(!card) return;
+  const qid = btn.dataset.qid, multi = btn.dataset.multi === '1';
+  if(!multi){
+    card.querySelectorAll('.ch-opt').forEach(b=>{ b.style.background='#fff'; b.style.color='var(--ink-2)';
+      const r=b.parentElement.querySelector('.ch-risk'); if(r) r.style.display='none'; });
+    window._chAnswers[qid] = btn.textContent.replace('（默认）','').trim();
+  }else{
+    const on = btn.dataset.on === '1';
+    btn.dataset.on = on ? '' : '1';
+    const cur = new Set((window._chAnswers[qid]||'').split('、').filter(Boolean));
+    const label = btn.textContent.replace('（默认）','').trim();
+    if(on){ cur.delete(label); } else { cur.add(label); }
+    window._chAnswers[qid] = [...cur].join('、');
+  }
+  if(!multi || btn.dataset.on === '1'){
+    btn.style.background = 'var(--ink, #201D18)'; btn.style.color = '#fff';
+    const r = btn.parentElement.querySelector('.ch-risk'); if(r) r.style.display='block';
+  }else{
+    btn.style.background = '#fff'; btn.style.color = 'var(--ink-2)';
+    const r = btn.parentElement.querySelector('.ch-risk'); if(r) r.style.display='none';
+  }
+  // 把已选答案同步进输入框（用户可补充后发送）
+  const parts = Object.entries(window._chAnswers).filter(([,v])=>v).map(([k,v])=>`${k}: ${v}`);
+  const ta = $('#composerInput');
+  if(ta && parts.length){ ta.value = parts.join('；'); autoGrow(); syncChips(); }
 }
 
 // ══════════════════════════════════════════════
@@ -51,8 +151,8 @@ window.initChat = function(){
   // R29：@成员自动提示
   bindMentionSuggest();
 
-  // 模板 chip
-  $$('.hintbar .chip').forEach(c => c.addEventListener('click', ()=>{
+  // 模板 chip（纯填字类，mode-chip 是能力激活按钮，单独绑定）
+  $$('.hintbar .chip:not(.mode-chip)').forEach(c => c.addEventListener('click', ()=>{
     if(c.disabled || !ta) return;
     ta.value = c.getAttribute('data-tpl') || '';
     ta.focus(); autoGrow(); syncChips();
@@ -71,6 +171,41 @@ window.initChat = function(){
     inp.onchange = ()=>uploadFiles(inp.files);
     inp.click();
   });
+
+  // ── 能力模式激活（设计模式 / 信号清洗）──────────────────────────────
+  // 模式 = 激活一种专属 agent 工作流；开启后每条消息强制注入该流程规则（不靠 LLM 自觉读 SOUL）。
+  // window._activeMode: null | 'design' | 'signal'
+  window._activeMode = window._activeMode || null;
+  function setMode(mode){
+    // 再点当前模式=关闭；点另一个=切换（互斥）
+    window._activeMode = (window._activeMode === mode) ? null : mode;
+    // 按钮高亮
+    const dm = $('#designModeBtn'), sm = $('#signalModeBtn');
+    [['design',dm],['signal',sm]].forEach(([k,btn])=>{
+      if(!btn) return;
+      const on = window._activeMode === k;
+      btn.style.background = on ? 'var(--brand-strong)' : '';
+      btn.style.color = on ? '#fff' : '';
+      btn.style.borderColor = on ? 'var(--brand-strong)' : '';
+    });
+    renderModeBanner();
+    // placeholder 提示
+    if(ta){
+      ta.placeholder = window._activeMode==='design' ? '描述你要规划的产品问题与约束（目标/背景/限制），agent 将带你走设计收敛…'
+        : window._activeMode==='signal' ? '粘贴会议纪要 / 客户反馈 / 聊天记录，agent 会清洗成规范信号…'
+        : '和你的 agent 对话… 或 @成员名 发快速通知；可拖文件上传';
+    }
+    toast(window._activeMode==='design' ? '🎯 设计模式已激活：接下来 agent 按「设计收敛」流程推进'
+      : window._activeMode==='signal' ? '📥 信号清洗模式已激活：粘贴原始信息，agent 会清洗入库'
+      : '已退出模式，恢复普通对话');
+  }
+  const dmBtn = $('#designModeBtn');
+  if(dmBtn) dmBtn.addEventListener('click', ()=>setMode('design'));
+  const smBtn = $('#signalModeBtn');
+  if(smBtn) smBtn.addEventListener('click', ()=>setMode('signal'));
+  // choices 控件点击（事件委托到 transcript）
+  const tr = $('#transcript');
+  if(tr) tr.addEventListener('click', onChoiceClick);
 
   // 拖拽上传
   const tip = $('#dragTip');
@@ -247,9 +382,6 @@ async function loadSessions(){
   // 新对话按钮
   const newBtn = $('#viewChat .sess-panel .side-head button');
   if(newBtn) newBtn.onclick = newSession;
-  // R21：沉淀为信号按钮
-  const tsb = $('#chatToSignalBtn');
-  if(tsb && !tsb._bound){ tsb._bound=1; tsb.onclick = chatToSignal; }
   // 重试上一条按钮：用上一条消息重新发送（模型/网络出错时不用重新输入）
   const rtb = $('#chatRetryBtn');
   if(rtb && !rtb._bound){ rtb._bound=1; rtb.onclick = retryLastMsg; }
@@ -260,14 +392,8 @@ async function loadSessions(){
   loadChatWorkspaceList();
 }
 
-// 顶部当前对话标题（可点击改名）
-function updateChatTitle(title){
-  const el = $('#chatTitleLabel');
-  if(!el) return;
-  if(activeSid && title){ el.textContent = title; el.style.display=''; }
-  else if(_draftMode){ el.textContent = '🆕 新对话'; el.style.display=''; }
-  else { el.style.display='none'; }
-}
+// 顶部对话标题控件已移除（与侧栏标题重复，用户确认删除）；保留空函数兼容旧调用点
+function updateChatTitle(_title){ /* no-op：chatTitleLabel 控件已从 workbench.html 删除 */ }
 
 // R29：@成员自动提示（输入@时弹成员列表，点选补全，不靠手打）
 let _memberList = null;
@@ -312,65 +438,6 @@ function bindMentionSuggest(){
     });
   });
   ta.addEventListener('blur', ()=>setTimeout(closePanel, 200));
-}
-
-// R21+：通用提交入库——成员可提交信号/需求/设计，都进决策中心审核
-async function chatToSignal(){
-  // 预填最后一条 AI 回复作为内容参考
-  let lastAnswer = '';
-  const msgs = document.querySelectorAll('#transcript .cmsg.ai .cc');
-  if(msgs.length) lastAnswer = (msgs[msgs.length-1].textContent||'').trim().slice(0,300);
-  // 第一步：选提交类型
-  const pick = await wbForm('提交入库审核', [
-    {key:'kind', label:'内容类型', type:'select', value:'signals', options:[
-      {value:'signals', label:'📥 信号（客户反馈/问题线索/趋势）'},
-      {value:'requirements', label:'📋 需求（明确的产品需求）'},
-      {value:'designs', label:'📐 设计（产品设计稿）'},
-    ]},
-  ], {icon:'📤', okText:'下一步'});
-  if(!pick) return;
-  const today = new Date().toISOString().slice(0,10);
-  const rnd = () => String(Math.floor(Math.random()*900)+100);
-  let form, md, category, title;
-  if(pick.kind === 'signals'){
-    form = await wbForm('提交信号（入库审核）', [
-      {key:'title', label:'信号标题', type:'text', required:true, placeholder:'一句话概括'},
-      {key:'category', label:'类别', type:'select', value:'需求信号', options:['需求信号','问题信号','竞品信号','市场信号']},
-      {key:'urgency', label:'紧急度', type:'select', value:'中', options:['高','中','低']},
-      {key:'content', label:'信号内容', type:'textarea', value:lastAnswer, required:true},
-    ], {icon:'📥', okText:'提交入库'});
-    if(!form) return;
-    category = 'signals'; title = form.title;
-    const sid = 'SIG-'+today.replace(/-/g,'')+'-'+rnd();
-    md = `---\nid: ${sid}\ntype: signal\ndate: ${today}\nsource: 对话沉淀\ntitle: ${form.title}\ndescription: ${form.title}\ncategory: ${form.category}\nurgency: ${form.urgency}\nconfidence: 中\nstatus: 待triage\n---\n\n## 信号内容\n${form.content}\n`;
-  }else if(pick.kind === 'requirements'){
-    form = await wbForm('提交需求（入库审核）', [
-      {key:'title', label:'需求标题', type:'text', required:true},
-      {key:'priority', label:'优先级', type:'select', value:'P2', options:['P0','P1','P2','P3']},
-      {key:'content', label:'需求描述（含验收标准/边界）', type:'textarea', required:true},
-    ], {icon:'📋', okText:'提交入库'});
-    if(!form) return;
-    category = 'requirements'; title = form.title;
-    const rid = 'REQ-'+today.replace(/-/g,'')+'-'+rnd();
-    md = `---\nid: ${rid}\ntype: requirement\ndate: ${today}\ntitle: ${form.title}\ndescription: ${form.title}\nstatus: 待评估\npriority: ${form.priority}\nowner: 待分配\n---\n\n## 需求描述\n${form.content}\n`;
-  }else{ // designs
-    form = await wbForm('提交设计（入库审核）', [
-      {key:'title', label:'设计标题', type:'text', required:true},
-      {key:'requirement_id', label:'关联需求ID（可填"待关联"）', type:'text', value:'待关联'},
-      {key:'content', label:'设计内容', type:'textarea', required:true},
-    ], {icon:'📐', okText:'提交入库'});
-    if(!form) return;
-    category = 'designs'; title = form.title;
-    const did = 'DSN-'+today.replace(/-/g,'')+'-'+rnd();
-    md = `---\nid: ${did}\ntype: design\ndate: ${today}\ntitle: ${form.title}\ndescription: ${form.title}\nrequirement_id: ${form.requirement_id||'待关联'}\nstatus: 草稿\n---\n\n## 设计内容\n${form.content}\n`;
-  }
-  try{
-    await api('/api/review/submit', {method:'POST', body:JSON.stringify({
-      title, category, content: md,
-      suggestion: {target_category:category, summary:title}
-    })});
-    if(window.__wb) window.__wb.toast('已提交入库审核，管理员会收到通知');
-  }catch(e){ if(window.__wb) window.__wb.toast('提交失败：'+(e.message||''), true); }
 }
 
 async function loadChatWorkspaceList(){
@@ -742,7 +809,13 @@ async function doSend(){
   if(pendingFiles.length){
     userText += '\n\n[已上传到工作库：' + pendingFiles.map(f=>f.name).join(', ') + ']';
   }
-  _lastUserMsg = msg;   // 记录纯文本消息，供"重试上一条"复用（不含附件提示）
+  // 🎯 能力模式：把模式流程规则拼进发给 agent 的消息（强制注入，不靠 LLM 自觉读 SOUL）
+  let sendMsg = msg;
+  if(window._activeMode){
+    sendMsg = _modeInjectedMessage(window._activeMode, msg);
+    window._chAnswers = {};   // 清空本轮已选 choices（答案已随消息发出）
+  }
+  _lastUserMsg = sendMsg;   // 记录发送消息，供"重试上一条"复用（不含附件提示）
   appendMsg('user', userText);
   ta.value = ''; autoGrow(); syncChips();
   // R40：真正发出消息 → 草稿态转正（会话将由后端落盘）
@@ -840,7 +913,7 @@ async function doSend(){
     // 2. chat/start
     const startBody = {
       session_id: activeSid,
-      message: msg || '（见上传的文件）',
+      message: sendMsg || '（见上传的文件）',
       profile: W.USER.profile || 'default',
       // 优先用用户在个人中心启用的工作库路径；没配则不传，让后端沿用 session 已设的 workspace
       workspace: wsPath || undefined

@@ -11,14 +11,17 @@
 ```
 wdp-team-hermes/
 ├── 团队工作台手册.md        # 核心手册（工作流 + WDP知识库，先读它）
-├── skills/                  # 团队 skills（signal-intake / requirement-triage 等）
+├── skills/                  # 团队 skills（signal-intake / requirement-triage / design-converge 等）
 ├── knowledge/               # 团队知识资产库（git 版本化，单一数据源）
 │   ├── signals/             # 信号层产出
 │   ├── requirements/        # 需求档案
 │   ├── designs/             # 产品设计稿
 │   ├── decisions/           # 决策记录
-│   └── tracking/            # 节点跟踪
-├── docs/                    # 部署/架构文档
+│   ├── tracking/            # 节点跟踪
+│   ├── projects/            # 项目分区（项目档案+项目需求+交付材料）
+│   └── team/                # 团队成员档案（画像随对话沉淀）
+├── docs/                    # 部署/架构文档 + 智能体档案
+├── web-ui/                  # 定制前端+后端（本地开发主战场）
 └── agent-src/               # Hermes 官方源码（运行时，勿改）
 ```
 

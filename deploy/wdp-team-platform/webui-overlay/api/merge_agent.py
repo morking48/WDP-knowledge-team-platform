@@ -185,7 +185,7 @@ def analyze_merge(admin_user: str = 'admin') -> dict:
     if not key:
         return {'error': '团队未配置 OpenRouter Key，无法调用归并 Agent'}, 500
 
-    # 组装信号清单给 LLM
+    # 组装信号清单（excerpt 给足依据：120→300 字，判归并更准）
     sig_list = []
     for s in signals:
         sig_list.append({
@@ -194,8 +194,27 @@ def analyze_merge(admin_user: str = 'admin') -> dict:
             'category': s.get('category', ''),
             'module': s.get('related_module', ''),
             'urgency': s.get('urgency', ''),
-            'excerpt': (s.get('raw_excerpt') or s.get('_body', ''))[:120],
+            'excerpt': (s.get('raw_excerpt') or s.get('_body', ''))[:300],
         })
+
+    # ── 优化A：代码粗筛分桶（related_module + category）──
+    # 归并只可能发生在「同模块同类别」内；不同桶的信号本就不该合。
+    # 好处：①信号多时不全池混喂 LLM（省token、防错配）②信号少时行为不变。
+    buckets = {}
+    for s in sig_list:
+        bkey = (s.get('module') or '(无模块)', s.get('category') or '(无类别)')
+        buckets.setdefault(bkey, []).append(s)
+    # 只保留 ≥2 条的桶（单条无从归并）；把桶信息给 LLM，让它在桶内判断
+    candidate_buckets = {k: v for k, v in buckets.items() if len(v) >= 2}
+    if not candidate_buckets:
+        return {'ok': True, 'groups': [], 'model': model, 'analyzed': len(signals),
+                'message': f'分析了 {len(signals)} 条活跃信号，未发现同模块同类别的重复信号（无需归并）'}
+    # 有效候选 id 集合（优化B 自校验用）
+    valid_ids = {s['id'] for v in candidate_buckets.values() for s in v}
+    # 分桶后的清单（LLM 只在同桶内找组）
+    bucketed = []
+    for (mod, cat), items in candidate_buckets.items():
+        bucketed.append({'module': mod, 'category': cat, 'signals': items})
 
     rule = get_merge_rule()
     # 简化session架构：注入团队历史归并决策(few-shot)，越用越贴合团队风格
@@ -208,110 +227,56 @@ def analyze_merge(admin_user: str = 'admin') -> dict:
         hist_count = 0
     prompt = f"""{rule}
 {history}
-以下是当前活跃信号清单（JSON）：
-{json.dumps(sig_list, ensure_ascii=False, indent=2)}
+以下信号已按【模块+类别】分桶（归并只能在同一桶内发生，不同桶的信号不要合并）：
+{json.dumps(bucketed, ensure_ascii=False, indent=2)}
 
-请只返回 JSON，格式：
+请在每个桶内部找出「主题相同、应合并成一条」的信号组。只返回 JSON：
 {{"groups": [{{"signal_ids": ["SIG-x","SIG-y"], "suggested_title": "归并后标题",
   "suggested_body": "归并后新信号的完整描述（150字内：综合各源信号的问题本质、影响面、客户诉求）",
   "suggested_urgency": "高/中/低（取组内最高）",
   "reason": "归并理由"}}]}}
-如果没有可归并的组，返回 {{"groups": []}}。不要输出 JSON 以外的任何文字。"""
+规则：①只合并同一桶内的信号，signal_ids 必须来自上面清单里真实存在的 id ②每组至少 2 条 ③没有可归并的组返回 {{"groups": []}}。不要输出 JSON 以外的任何文字。"""
 
     try:
         content = _llm_call(key, model, prompt, max_tokens=4000, title='WDP Merge Agent')
         parsed = _extract_json(content)
         groups = parsed.get('groups', [])
-        # 补充每组信号的标题（前端展示）
+        # ── 优化B：结果自校验（防 LLM 幻觉/跨桶乱配）──
         by_id = {s['id']: s for s in sig_list}
+        # 桶归属：id → 桶key，用于校验一组是否都在同一桶
+        id_bucket = {}
+        for (mod, cat), items in candidate_buckets.items():
+            for s in items:
+                id_bucket[s['id']] = (mod, cat)
+        clean_groups = []
+        dropped = 0
         for g in groups:
-            g['signals'] = [{'id': sid, 'title': by_id.get(sid, {}).get('title', sid)}
-                            for sid in g.get('signal_ids', []) if sid in by_id]
-        groups = [g for g in groups if len(g.get('signals', [])) >= 2]
+            raw_ids = g.get('signal_ids', [])
+            # 只保留真实存在且在候选集内的 id，去重
+            ids = []
+            for sid in raw_ids:
+                if sid in valid_ids and sid not in ids:
+                    ids.append(sid)
+            if len(ids) < 2:
+                dropped += 1
+                continue
+            # 跨桶校验：一组必须全在同一个桶
+            bks = {id_bucket.get(sid) for sid in ids}
+            if len(bks) != 1:
+                dropped += 1
+                continue
+            g['signal_ids'] = ids
+            g['signals'] = [{'id': sid, 'title': by_id.get(sid, {}).get('title', sid)} for sid in ids]
+            clean_groups.append(g)
+        groups = clean_groups
+        msg = f'分析了 {len(signals)} 条活跃信号（{len(candidate_buckets)} 个候选桶），发现 {len(groups)} 组可归并'
+        if dropped:
+            msg += f'（已过滤 {dropped} 组无效建议）'
+        if hist_count:
+            msg += f'，参考了 {hist_count} 条团队历史决策'
         return {'ok': True, 'groups': groups, 'model': model,
-                'analyzed': len(signals), 'history_count': hist_count,
-                'message': f'分析了 {len(signals)} 条活跃信号，发现 {len(groups)} 组可归并'
-                           + (f'（参考了 {hist_count} 条团队历史决策）' if hist_count else '')}
+                'analyzed': len(signals), 'history_count': hist_count, 'message': msg}
     except Exception as e:
         logger.warning('analyze_merge LLM failed: %s', e)
         return {'error': f'归并分析失败: {e}'}, 500
 
-
-def analyze_review(profile: str, fname: str) -> dict:
-    """R22 审核助手：管理员发起，LLM 分析一条待审提交 → 建议(归类/查重/通过建议)。
-
-    注入团队历史审核决策(few-shot)，越用越懂团队尺度。
-    """
-    from api import review as _rv
-    from api import knowledge as _kb
-    inbox = _rv._user_inbox(profile)
-    if not inbox:
-        return {'error': 'inbox 不可用'}, 500
-    fpath = inbox / fname
-    meta_file = inbox / (fname + '.meta.json')
-    if not fpath.exists():
-        return {'error': '待审文件不存在'}, 404
-    content = fpath.read_text(encoding='utf-8')[:2000]
-    meta = {}
-    if meta_file.exists():
-        try:
-            meta = json.loads(meta_file.read_text(encoding='utf-8'))
-        except Exception:
-            pass
-
-    key, model, _p = _team_key_and_model()
-    if not key:
-        return {'error': '团队未配置 OpenRouter Key'}, 500
-
-    # 现有知识库摘要(查重用)
-    existing = []
-    for cat in ('signals', 'requirements', 'designs', 'decisions', 'projects'):
-        try:
-            for it in _kb.scan_category(cat):
-                existing.append(f"[{cat}] {it.get('id','')} {it.get('title','')}")
-        except Exception:
-            pass
-    # 项目档案在子目录（projects/<名>/project.md），scan_category 扫不到，单独注入
-    try:
-        from api.projects import list_projects
-        for pj in list_projects().get('projects', []):
-            existing.append(f"[projects] {pj.get('id','')} {pj.get('title','')} 客户={pj.get('customer','')} 阶段={pj.get('phase','')}")
-    except Exception:
-        pass
-
-    history = ''
-    hist_count = 0
-    try:
-        from api.wdp_agent_log import few_shot_block, history_stats
-        history = few_shot_block('review', 5)
-        hist_count = history_stats('review').get('count', 0)
-    except Exception:
-        pass
-
-    prompt = f"""{get_review_rule()}
-{history}
-## 待审提交
-提交人：{meta.get('username','')}  申报类目：{meta.get('category','')}  标题：{meta.get('title','')}
-内容：
-{content}
-
-## 现有知识库条目（查重参考）
-{chr(10).join(existing[:40])}
-
-请只返回 JSON：
-{{"suggested_category": "建议归入的类目(signals/requirements/designs/decisions/projects)",
-  "duplicate_risk": "无/低/中/高",
-  "duplicate_of": "若疑似重复,写出相关条目id,否则空串",
-  "quality_notes": "内容质量简评(字段完整性/表述清晰度,一两句)",
-  "recommendation": "通过/建议修订后通过/建议驳回",
-  "reason": "一句话理由"}}
-不要输出 JSON 以外的文字。"""
-    try:
-        txt = _llm_call(key, model, prompt, max_tokens=3000, title='WDP Review Assist')
-        advice = _extract_json(txt)
-        advice['model'] = model
-        advice['history_count'] = hist_count
-        return {'ok': True, 'advice': advice}
-    except Exception as e:
-        logger.warning('analyze_review failed: %s', e)
-        return {'error': f'审核助手分析失败: {e}'}, 500

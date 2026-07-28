@@ -224,12 +224,16 @@ window.wbOpenReviewDialog = function(item){
           }catch(_){ dlg.addSys('（建议负责人未能自动写入，可在工作台手动分配）'); }
         }
       }else{
-        const reason = prop.suggested_reject_reason || prop.reason || '不符合入库标准';
+        const aiReason = prop.suggested_reject_reason || prop.reason || '';
+        // 让 admin 在 AI 建议理由上确认/补充再发（理由会通知提交人，须具体可操作）
+        const reason = await wbPrompt('驳回理由（会发给提交人，请确保具体可操作）：', {value: aiReason});
+        if(reason === null) return;   // 取消则不驳回
+        const finalReason = (reason || '').trim() || '不符合入库标准，请完善后重新提交';
         await api('/api/review/reject', {method:'POST', body:JSON.stringify({
-          user: item._profile || item.profile, file: item.file, reason})});
+          user: item._profile || item.profile, file: item.file, reason: finalReason})});
         api('/api/admin/team-agent/record-decision', {method:'POST', body:JSON.stringify({
-          kind:'review', entry:{title:item.title, category:item.category, decision:'驳回', ai_advice:adv, reason, via:'dialog'}})}).catch(()=>{});
-        dlg.addSys(`↩ 已驳回，理由已通知提交人：${h(reason)}`);
+          kind:'review', entry:{title:item.title, category:item.category, decision:'驳回', ai_advice:adv, reason: finalReason, via:'dialog'}})}).catch(()=>{});
+        dlg.addSys(`↩ 已驳回，理由已通知提交人：${h(finalReason)}`);
       }
       dlg.el.disabled = true;
       if(window.loadReview) window.loadReview();
@@ -239,17 +243,18 @@ window.wbOpenReviewDialog = function(item){
 };
 
 // ── 团队规则 agent 对话（团队 Agent 页「规则助手」）──────────────────────
-window.wbOpenRulesDialog = function(){
+window.wbOpenRulesDialog = function(currentSoul){
+  const _baseline = currentSoul || '';   // 当前团队规则全文，做 diff 基准
   window.wbAgentDialog({
     kind: 'rules', icon: '🤖', title: '团队规则助手 · 对话共创',
     ref: {},
     executeLabel: '✓ 应用并发布',
     renderProposal(prop){
       const soul = prop.soul || '';
-      const preview = soul.length > 600 ? soul.slice(0,600)+'…' : soul;
+      const diff = wbLineDiff(_baseline, soul);
       return `<div style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:#fff;font-size:12px;line-height:1.7">
-        <div style="font-weight:700;color:var(--ink-3);font-size:11px;margin-bottom:4px">📋 新版团队规则（预览，应用后写入母本并发布给全体成员）</div>
-        <div style="max-height:220px;overflow-y:auto;white-space:pre-wrap;color:var(--ink);font-size:12px">${h(preview)}</div>
+        <div style="font-weight:700;color:var(--ink-3);font-size:11px;margin-bottom:4px">📋 相对当前规则的改动（应用后写入母本并发布给全体成员）</div>
+        ${diff}
         <div style="display:flex;gap:8px;margin-top:8px">
           <button class="ad-exec btn sm primary" data-act="apply">✓ 应用并发布</button>
         </div></div>`;
@@ -257,24 +262,27 @@ window.wbOpenRulesDialog = function(){
     async onExecute(prop, dlg){
       if(!prop.soul){ dlg.addSys('⚠️ 暂无可应用的规则文本'); return; }
       const r = await api('/api/admin/team-agent/apply-rules', {method:'POST', body:JSON.stringify({soul: prop.soul})});
-      dlg.addSys(`✅ 已写入团队规则母本并发布（${r.message||'成员 agent 已更新'}）`);
-      // 刷新团队 Agent 页文本框
+      dlg.addSys(`✅ 已写入团队规则母本并发布（${r.message||'成员 agent 已更新'}）。如需撤回，可在页面点「↩ 回滚上一版」。`);
       if(window.loadTeamAgent){ if(window.__wb) window.__wb.LOADED.teamagent=false; window.loadTeamAgent(); }
     }
   });
 };
 
 window.wbOpenSkillDialog = function(skillDir, skillName){
+  let _baseline = '';   // 当前 SKILL.md（草稿优先），做 diff 基准
+  api('/api/admin/team-agent/skill?dir='+encodeURIComponent(skillDir)).then(d=>{
+    _baseline = (d && (d.draft || d.published)) || '';
+  }).catch(()=>{});
   window.wbAgentDialog({
     kind: 'skill', icon: '🧩', title: '团队技能助手 · 编辑「'+(skillName||skillDir)+'」',
     ref: {skill_dir: skillDir},
     executeLabel: '💾 保存草稿',
     renderProposal(prop){
       const md = prop.skill_md || '';
-      const preview = md.length > 700 ? md.slice(0,700)+'…' : md;
+      const diff = wbLineDiff(_baseline, md);
       return `<div style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:#fff;font-size:12px;line-height:1.7">
-        <div style="font-weight:700;color:var(--ink-3);font-size:11px;margin-bottom:4px">📋 新版 SKILL.md（预览，保存为草稿后回页面点「发布」才同步成员）</div>
-        <div style="max-height:230px;overflow-y:auto;white-space:pre-wrap;color:var(--ink);font-size:12px;font-family:ui-monospace,monospace">${h(preview)}</div>
+        <div style="font-weight:700;color:var(--ink-3);font-size:11px;margin-bottom:4px">📋 相对当前 SKILL.md 的改动（保存为草稿后回页面点「发布」才同步成员）</div>
+        ${diff}
         <div style="display:flex;gap:8px;margin-top:8px">
           <button class="ad-exec btn sm primary" data-act="save">💾 保存为草稿</button>
         </div></div>`;
@@ -282,11 +290,46 @@ window.wbOpenSkillDialog = function(skillDir, skillName){
     async onExecute(prop, dlg){
       if(!prop.skill_md){ dlg.addSys('⚠️ 暂无可保存的技能内容'); return; }
       const r = await api('/api/admin/team-agent/skill/save', {method:'POST', body:JSON.stringify({skill_dir: skillDir, content: prop.skill_md})});
-      dlg.addSys('✅ 已保存为草稿。回到团队技能面板，确认无误后点「🚀 发布」同步给成员。');
-      // 刷新团队技能面板
+      dlg.addSys('✅ 已保存为草稿。回到团队技能面板，确认无误后点「🚀 发布」同步给成员（发布时会校验 frontmatter 合法性）。');
       if(window.loadTeamSkills){ window.loadTeamSkills(); }
     }
   });
 };
+
+// ── 发布安全网：新旧文本行级 diff（让 admin 看得见 LLM 到底改了什么）──────
+// 轻量 LCS 行 diff，够用即可（团队规则/技能通常几十~上百行）。
+function wbLineDiff(oldText, newText){
+  const a = String(oldText||'').split('\n');
+  const b = String(newText||'').split('\n');
+  const n=a.length, m=b.length;
+  // LCS 表
+  const dp = Array.from({length:n+1}, ()=>new Array(m+1).fill(0));
+  for(let i=n-1;i>=0;i--) for(let j=m-1;j>=0;j--)
+    dp[i][j] = a[i]===b[j] ? dp[i+1][j+1]+1 : Math.max(dp[i+1][j], dp[i][j+1]);
+  const rows=[]; let i=0,j=0, add=0, del=0;
+  while(i<n && j<m){
+    if(a[i]===b[j]){ rows.push(['ctx',a[i]]); i++; j++; }
+    else if(dp[i+1][j] >= dp[i][j+1]){ rows.push(['del',a[i]]); del++; i++; }
+    else { rows.push(['add',b[j]]); add++; j++; }
+  }
+  while(i<n){ rows.push(['del',a[i]]); del++; i++; }
+  while(j<m){ rows.push(['add',b[j]]); add++; j++; }
+  // 折叠大段未变化的 ctx（只显示变更附近，省空间）
+  const keep = new Array(rows.length).fill(false);
+  rows.forEach((r,idx)=>{ if(r[0]!=='ctx'){ for(let k=Math.max(0,idx-2);k<=Math.min(rows.length-1,idx+2);k++) keep[k]=true; } });
+  let html='', folded=0;
+  rows.forEach((r,idx)=>{
+    if(!keep[idx]){ folded++; return; }
+    if(folded){ html+=`<div style="color:var(--ink-3);font-size:11px;padding:1px 6px">⋯ 省略 ${folded} 行未改动 ⋯</div>`; folded=0; }
+    const [t,line]=r;
+    const bg = t==='add'?'#E8F0E9':t==='del'?'#FAEDE5':'transparent';
+    const mark = t==='add'?'+':t==='del'?'−':' ';
+    const col = t==='add'?'#3D7A4E':t==='del'?'#9E3D12':'var(--ink-3)';
+    html+=`<div style="background:${bg};padding:1px 6px;white-space:pre-wrap;font-size:11.5px;font-family:ui-monospace,monospace"><span style="color:${col};font-weight:700">${mark}</span> ${h(line)||'&nbsp;'}</div>`;
+  });
+  if(folded){ html+=`<div style="color:var(--ink-3);font-size:11px;padding:1px 6px">⋯ 省略 ${folded} 行未改动 ⋯</div>`; }
+  const summary = `<div style="font-size:11px;margin-bottom:4px"><span style="color:#3D7A4E;font-weight:700">+${add} 行</span> · <span style="color:#9E3D12;font-weight:700">−${del} 行</span>${add+del===0?'（无变化）':''}</div>`;
+  return summary + `<div style="max-height:260px;overflow-y:auto;border:1px solid var(--line);border-radius:6px">${html||'<div style="padding:8px;color:var(--ink-3)">无差异</div>'}</div>`;
+}
 
 })();
