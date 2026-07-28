@@ -50,6 +50,19 @@ function renderMd(text){
 }
 
 // 设计收敛：选择题卡片（qid/question/why/multi/irrev/options[{label,default,risk}]）
+// 统一退出能力模式（横幅退出 / 切 session 时复用）：清模式态 + 按钮 + choices缓存 + placeholder
+// silent=false 时 toast 提示（切 session 场景用，让用户知道模式被关了）
+function exitActiveMode(opts){
+  opts = opts || {};
+  if(!window._activeMode) return;
+  window._activeMode = null;
+  window._chAnswers = {};
+  ['designModeBtn','signalModeBtn'].forEach(id=>{ const b=document.getElementById(id); if(b){b.style.background='';b.style.color='';b.style.borderColor='';} });
+  if(typeof renderModeBanner==='function') renderModeBanner();
+  const t=document.getElementById('composerInput'); if(t) t.placeholder='和你的 agent 对话… 或 @成员名 发快速通知；可拖文件上传';
+  if(opts.toast && window.__wb && window.__wb.toast) window.__wb.toast(opts.toast);
+}
+
 // 顶部模式横幅：激活能力模式后，对话区顶部显示醒目提示（让"开/关"确定可见）
 function renderModeBanner(){
   let banner = document.getElementById('modeBanner');
@@ -71,10 +84,7 @@ function renderModeBanner(){
   }
   banner.innerHTML = html;
   const ex = document.getElementById('modeBannerExit');
-  if(ex) ex.onclick = ()=>{ window._activeMode=null; renderModeBanner();
-    ['designModeBtn','signalModeBtn'].forEach(id=>{ const b=document.getElementById(id); if(b){b.style.background='';b.style.color='';b.style.borderColor='';} });
-    const t=document.getElementById('composerInput'); if(t) t.placeholder='和你的 agent 对话… 或 @成员名 发快速通知；可拖文件上传';
-  };
+  if(ex) ex.onclick = ()=>exitActiveMode();
 }
 
 // 模式激活时，把该模式的流程规则拼进发给 agent 的消息（强制注入，不靠 LLM 读 SOUL）
@@ -566,6 +576,7 @@ function newSession(){
     return;
   }
   // R40：进入草稿态（不真建session，发消息时才建）；重复点＋只保持一个草稿
+  if(window._activeMode){ const mn = window._activeMode==='design'?'设计模式':'信号清洗模式'; exitActiveMode({toast:`已退出${mn}（新建了会话）`}); }
   saveDraftInput();               // 缓存当前对话未发送的输入
   activeSid = null;
   _draftMode = true;
@@ -581,6 +592,7 @@ function newSession(){
 
 // R40：从其它会话切回草稿卡
 function switchToDraft(){
+  if(window._activeMode){ const mn = window._activeMode==='design'?'设计模式':'信号清洗模式'; exitActiveMode({toast:`已退出${mn}（切换了会话）`}); }
   saveDraftInput();
   activeSid = null;
   _draftMode = true;
@@ -597,6 +609,11 @@ function switchToDraft(){
 
 async function switchSession(sid){
   if(sid === activeSid) return;
+  // 切会话前若有激活的能力模式，自动退出并提示（模式属于"当前这轮对话流"，切走即结束，防误操作）
+  if(window._activeMode){
+    const mn = window._activeMode==='design' ? '设计模式' : '信号清洗模式';
+    exitActiveMode({toast: `已退出${mn}（切换了会话）`});
+  }
   saveDraftInput();               // R39/R40：切走前缓存当前输入
   activeSid = sid;
   // R40：切到真实会话时，若草稿无缓存输入则丢弃草稿卡（无内容即清除）
