@@ -201,6 +201,55 @@ def approve(profile: str, fname: str, final_name: str | None,
     if not target_name.endswith('.md'):
         target_name += '.md'
 
+    # ── 项目开档申请：不平铺写文件，走 projects.create_project 建目录结构 ──
+    if category == 'projects':
+        fm = {}
+        try:
+            import re as _re
+            m = _re.match(r'^---\s*\n(.*?)\n---', content, _re.DOTALL)
+            if m:
+                for line in m.group(1).splitlines():
+                    if ':' in line and not line.strip().startswith('#'):
+                        k, v = line.split(':', 1)
+                        fm[k.strip()] = v.split('#')[0].strip().strip('"\'')
+        except Exception:
+            pass
+        from api import projects as _prj
+        res = _prj.create_project({
+            'dir': fm.get('title') or target_name[:-3],
+            'title': fm.get('title') or target_name[:-3],
+            'customer': fm.get('customer', ''),
+            'phase': fm.get('phase', '售前'),
+            'owner': fm.get('owner', '') or meta.get('username', ''),
+            'description': fm.get('description', ''),
+            'background': '',
+        }, creator=meta.get('username', admin_user))
+        if isinstance(res, tuple):
+            return res
+        # inbox 归档 + 通知提交人（复用下方逻辑的简化版）
+        try:
+            inbox = _user_inbox(profile)
+            archive = inbox.parent / ARCHIVE_DIRNAME / time.strftime('%Y%m%d-%H%M%S')
+            archive.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(inbox / fname), str(archive / fname))
+            meta['status'] = 'approved'
+            meta['resolved_at'] = time.strftime('%Y-%m-%d %H:%M:%S')
+            mf = inbox / (fname + '.meta.json')
+            if mf.exists():
+                (archive / (fname + '.meta.json')).write_text(
+                    json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
+                mf.unlink()
+        except Exception as e:
+            logger.warning('project approve archive failed: %s', e)
+        try:
+            from api import knowledge_ops as _ops
+            _ops.notify_member(meta.get('username', ''),
+                               f'✅ 你的项目开档申请「{res.get("dir","")}」已通过，项目已建档', admin_user)
+        except Exception:
+            pass
+        return {'ok': True, 'category': 'projects', 'project': res.get('dir'),
+                'message': res.get('message', '项目已开档')}
+
     # 模板校验（触点2：管理员审核入库时，二次守门）
     vr = _kb.validate_against_template(category, content)
     if not vr['ok']:

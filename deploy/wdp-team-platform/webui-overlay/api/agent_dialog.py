@@ -106,6 +106,7 @@ _PROPOSAL_REQUIRED = {
     'merge': ['groups'],
     'review': ['recommendation'],
     'rules': ['soul'],
+    'skill': ['skill_md'],
 }
 
 
@@ -117,6 +118,8 @@ def _proposal_valid(kind: str, proposal) -> bool:
         if k not in proposal:
             return False
         if kind == 'rules' and not (proposal.get('soul') or '').strip():
+            return False
+        if kind == 'skill' and not (proposal.get('skill_md') or '').strip():
             return False
     return True
 
@@ -158,6 +161,15 @@ def _merge_system_prompt() -> str:
 - proposal 块外用简洁中文说明你的思路/回应管理员，不要重复罗列方案内容。"""
 
 
+def _get_review_rule_text() -> str:
+    """审核助手的调教规则（团队 Agent 页可编辑，与归并规则平级）。"""
+    try:
+        from api.merge_agent import get_review_rule
+        return get_review_rule()
+    except Exception:
+        return '你是 WDP 产品团队知识库的审核助手，正在和管理员对话协作审核一条入库申请。'
+
+
 def _review_system_prompt(ref: dict) -> str:
     from api import review as _rv
     from api import knowledge as _kb
@@ -182,13 +194,20 @@ def _review_system_prompt(ref: dict) -> str:
             except Exception:
                 pass
     existing = []
-    for cat in ('signals', 'requirements', 'designs', 'decisions'):
+    for cat in ('signals', 'requirements', 'designs', 'decisions', 'projects'):
         try:
             for it in _kb.scan_category(cat):
                 existing.append(f"[{cat}] {it.get('id','')} {it.get('title','')} status={it.get('status','')}")
         except Exception:
             pass
-    return f"""你是 WDP 产品团队知识库的审核助手，正在和管理员对话协作审核一条入库申请。
+    # 项目档案在子目录（projects/<名>/project.md），scan_category 扫不到，单独注入
+    try:
+        from api.projects import list_projects
+        for pj in list_projects().get('projects', []):
+            existing.append(f"[projects] {pj.get('id','')} {pj.get('title','')} 客户={pj.get('customer','')} 阶段={pj.get('phase','')}")
+    except Exception:
+        pass
+    return f"""{_get_review_rule_text()}
 {history}
 ## 待审申请
 提交人：{meta.get('username','')}  申报类目：{meta.get('category','')}  标题：{meta.get('title','')}
@@ -207,7 +226,7 @@ def _review_system_prompt(ref: dict) -> str:
 - **若这条申请适合沉淀为需求或需要跟进，请对照上面成员职责给出「建议负责人」并说明理由**（谁的职责域最匹配）。
 - **每当你的审核建议有更新（首轮必须），在回复末尾输出 ```proposal 代码块**：
 ```proposal
-{{"suggested_category": "signals/requirements/designs/decisions", "duplicate_risk": "无/低/中/高", "duplicate_of": "疑似重复的条目id或空串", "quality_notes": "质量简评", "recommendation": "通过/建议修订后通过/建议驳回", "reason": "一句话理由", "suggested_owner": "建议负责人用户名或空串", "suggested_reject_reason": "若建议驳回,给出发给提交人的驳回理由,否则空串"}}
+{{"suggested_category": "signals/requirements/designs/decisions/projects(项目开档申请)", "duplicate_risk": "无/低/中/高", "duplicate_of": "疑似重复的条目id或空串", "quality_notes": "质量简评", "recommendation": "通过/建议修订后通过/建议驳回", "reason": "一句话理由", "suggested_owner": "建议负责人用户名或空串", "suggested_reject_reason": "若建议驳回,给出发给提交人的驳回理由,否则空串"}}
 ```
 - proposal 块外用简洁中文回应管理员，不重复方案内容。"""
 
@@ -252,27 +271,61 @@ def _rules_system_prompt() -> str:
 - 管理员满意后会点"应用并发布"，届时你的 soul 全文会写入母本并下发成员。"""
 
 
+def _skill_system_prompt(ref: dict) -> str:
+    """团队 skill 编辑 agent：和管理员对话协作修改某个团队 skill 的 SKILL.md。"""
+    skill_dir = (ref or {}).get('skill_dir') or ''
+    cur = ''
+    try:
+        from api import team_skills_admin as _ts
+        got = _ts.get_team_skill(skill_dir)
+        if isinstance(got, dict):
+            cur = got.get('draft') or got.get('published') or ''
+    except Exception:
+        pass
+    return f"""你是 WDP 产品团队的「团队技能助手」，和管理员对话协作编辑团队 skill（技能）。
+团队 skill 是所有成员 AI 助手共享的方法论/操作规程，发布后成员实时同步、按需加载执行。
+
+## 当前正在编辑的 skill：{skill_dir or '（未指定）'}
+### 当前 SKILL.md 全文
+{cur or '（当前为空或读取失败）'}
+
+## 你的职责
+- 管理员会提出想改进/新增/修正的技能内容意图（如"补一个操作步骤""改进触发条件""加个避坑说明"），你帮他组织成**规范、清晰、可执行**的 SKILL.md。
+- 保持 skill 的整体结构和已有有效内容，做增量优化而非推倒重写（除非管理员明确要求重写）。
+- **必须保留 YAML frontmatter**（--- 开头，含 name/description 等），成员 agent 靠它检索加载；description 要准确概括技能用途和触发场景。
+- 技能正文面向 AI 助手可执行：清晰的触发条件、编号步骤、具体命令、避坑说明、验证步骤。
+- **每当 skill 文本有更新（首轮必须），在回复末尾输出 ```proposal 代码块**，内含**完整的新版 SKILL.md 全文**：
+```proposal
+{{"skill_md": "<完整的新版 SKILL.md（含 frontmatter）全文>"}}
+```
+- proposal 块外用简洁中文说明你改了什么、为什么，不要重复粘贴全文。
+- 管理员满意后会点"发布"，届时你的 skill_md 全文会写入正式 skill，成员实时同步。"""
+
+
 # ── 接口实现 ────────────────────────────────────────────────────────────────
 
 def start_dialog(kind: str, ref: dict) -> dict:
     _gc()
-    if kind not in ('merge', 'review', 'rules'):
+    if kind not in ('merge', 'review', 'rules', 'skill'):
         return {'error': f'未知对话类型 {kind}'}, 400
     try:
         if kind == 'merge':
             sys_prompt = _merge_system_prompt()
         elif kind == 'review':
             sys_prompt = _review_system_prompt(ref or {})
+        elif kind == 'skill':
+            sys_prompt = _skill_system_prompt(ref or {})
         else:  # rules
             sys_prompt = _rules_system_prompt()
     except Exception as e:
         return {'error': f'构建上下文失败: {e}'}, 500
     first_user = {'merge': '请分析当前信号池，给出你的归并方案。',
                   'review': '请分析这条入库申请，给出你的审核建议。',
+                  'skill': (ref or {}).get('intent') or '请先概述这个技能当前的内容和结构，然后问我想改进/新增什么。',
                   'rules': (ref or {}).get('intent') or '请基于当前团队规则，问我想强调或调整什么，帮我组织成规范条目。'}[kind]
     messages = [{'role': 'system', 'content': sys_prompt},
                 {'role': 'user', 'content': first_user}]
-    _mt = 8000 if kind == 'rules' else 2000   # 规则agent要输出完整SOUL全文，需大额度
+    _mt = 8000 if kind in ('rules', 'skill') else 2000   # 规则/skill agent 要输出完整全文，需大额度
     try:
         raw = _call_llm(messages, max_tokens=_mt)
     except Exception as e:
@@ -310,7 +363,7 @@ def send_dialog(dialog_id: str, message: str) -> dict:
     # 截断：保留 system + 最近 N 条
     if len(d['messages']) > _MAX_TURNS:
         d['messages'] = [d['messages'][0]] + d['messages'][-(_MAX_TURNS - 1):]
-    _mt = 8000 if d.get('kind') == 'rules' else 2000
+    _mt = 8000 if d.get('kind') in ('rules', 'skill') else 2000
     try:
         raw = _call_llm(d['messages'], max_tokens=_mt)
     except Exception as e:

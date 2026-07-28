@@ -264,4 +264,29 @@ window.wbOpenRulesDialog = function(){
   });
 };
 
+window.wbOpenSkillDialog = function(skillDir, skillName){
+  window.wbAgentDialog({
+    kind: 'skill', icon: '🧩', title: '团队技能助手 · 编辑「'+(skillName||skillDir)+'」',
+    ref: {skill_dir: skillDir},
+    executeLabel: '💾 保存草稿',
+    renderProposal(prop){
+      const md = prop.skill_md || '';
+      const preview = md.length > 700 ? md.slice(0,700)+'…' : md;
+      return `<div style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:#fff;font-size:12px;line-height:1.7">
+        <div style="font-weight:700;color:var(--ink-3);font-size:11px;margin-bottom:4px">📋 新版 SKILL.md（预览，保存为草稿后回页面点「发布」才同步成员）</div>
+        <div style="max-height:230px;overflow-y:auto;white-space:pre-wrap;color:var(--ink);font-size:12px;font-family:ui-monospace,monospace">${h(preview)}</div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="ad-exec btn sm primary" data-act="save">💾 保存为草稿</button>
+        </div></div>`;
+    },
+    async onExecute(prop, dlg){
+      if(!prop.skill_md){ dlg.addSys('⚠️ 暂无可保存的技能内容'); return; }
+      const r = await api('/api/admin/team-agent/skill/save', {method:'POST', body:JSON.stringify({skill_dir: skillDir, content: prop.skill_md})});
+      dlg.addSys('✅ 已保存为草稿。回到团队技能面板，确认无误后点「🚀 发布」同步给成员。');
+      // 刷新团队技能面板
+      if(window.loadTeamSkills){ window.loadTeamSkills(); }
+    }
+  });
+};
+
 })();

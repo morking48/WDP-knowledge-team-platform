@@ -5246,6 +5246,26 @@ def handle_get(handler, parsed) -> bool:
         res['published_at'] = _ta.get_publish_status()
         return j(handler, res)
 
+    # ── 团队 Skill 编辑（admin）──────────────────────────────────────
+    if parsed.path == "/api/admin/team-agent/skills":
+        from api import users as _users
+        if not _users.is_request_admin(handler):
+            return j(handler, {"error": "需要管理员权限"}, status=403)
+        from api import team_skills_admin as _ts
+        return j(handler, _ts.list_team_skills())
+    if parsed.path == "/api/admin/team-agent/skill":
+        from api import users as _users
+        if not _users.is_request_admin(handler):
+            return j(handler, {"error": "需要管理员权限"}, status=403)
+        from api import team_skills_admin as _ts
+        from urllib.parse import parse_qs as _pq
+        _sd = _pq(parsed.query).get("dir", [""])[0]
+        res = _ts.get_team_skill(_sd)
+        if isinstance(res, tuple):
+            b, code = res
+            return j(handler, b, status=code)
+        return j(handler, res)
+
     # ── 团队工作产出看板（admin，R12）──────────────────────────────────
     if parsed.path == "/api/admin/output-board":
         from api import users as _users
@@ -5271,6 +5291,12 @@ def handle_get(handler, parsed) -> bool:
             return j(handler, {"error": "需要管理员权限"}, status=403)
         from api import merge_agent as _ma
         return j(handler, {"rule": _ma.get_merge_rule()})
+    if parsed.path == "/api/admin/review/rule":
+        from api import users as _users
+        if not _users.is_request_admin(handler):
+            return j(handler, {"error": "需要管理员权限"}, status=403)
+        from api import merge_agent as _ma
+        return j(handler, {"rule": _ma.get_review_rule()})
     # ── Agent 决策日志统计（简化session）────────────────────────────────
     if parsed.path == "/api/admin/agent-log/stats":
         from api import users as _users
@@ -5291,6 +5317,28 @@ def handle_get(handler, parsed) -> bool:
         sub = parsed.path[len("/api/knowledge/"):]
         if sub == "stats":
             return j(handler, _kb.handle_knowledge_stats(handler, parsed))
+        # ── 项目分区（登录可读）──
+        if sub == "projects":
+            from api import projects as _prj
+            return j(handler, _prj.list_projects())
+        if sub == "project":
+            from api import projects as _prj
+            from urllib.parse import parse_qs as _pq
+            _pd = _pq(parsed.query).get("dir", [""])[0]
+            res = _prj.get_project(_pd)
+            if isinstance(res, tuple):
+                b, code = res
+                return j(handler, b, status=code)
+            return j(handler, res)
+        if sub == "project-item":
+            from api import projects as _prj
+            from urllib.parse import parse_qs as _pq
+            q = _pq(parsed.query)
+            res = _prj.get_item_body(q.get("dir", [""])[0], q.get("kind", ["req"])[0], q.get("file", [""])[0])
+            if isinstance(res, tuple):
+                b, code = res
+                return j(handler, b, status=code)
+            return j(handler, res)
         if sub == "item":
             res = _kb.handle_knowledge_item(handler, parsed)
             if isinstance(res, tuple):
@@ -6054,12 +6102,31 @@ def handle_post(handler, parsed) -> bool:
             elif p == "/api/admin/team-agent/merge-rule":
                 from api import merge_agent as _ma
                 res = _ma.save_merge_rule(body.get("rule") or "")
+            elif p == "/api/admin/team-agent/review-rule":
+                from api import merge_agent as _ma
+                res = _ma.save_review_rule(body.get("rule") or "")
             elif p == "/api/admin/team-agent/review-assist":
                 from api import merge_agent as _ma
                 res = _ma.analyze_review(body.get("user") or "", body.get("file") or "")
             elif p == "/api/admin/team-agent/record-decision":
                 from api import wdp_agent_log as _al
                 res = _al.record_decision(body.get("kind") or "", body.get("entry") or {})
+            elif p == "/api/admin/team-agent/skill/save":
+                from api import team_skills_admin as _ts
+                res = _ts.save_team_skill_draft(body.get("skill_dir") or "", body.get("content") or "")
+            elif p == "/api/admin/team-agent/skill/publish":
+                from api import team_skills_admin as _ts
+                res = _ts.publish_team_skill(body.get("skill_dir") or "", body.get("content"))
+            elif p == "/api/admin/team-agent/skill/discard":
+                from api import team_skills_admin as _ts
+                res = _ts.discard_team_skill_draft(body.get("skill_dir") or "")
+            elif p == "/api/admin/team-agent/skill/create":
+                from api import team_skills_admin as _ts
+                res = _ts.create_team_skill(body.get("skill_dir") or "",
+                                            body.get("name") or "", body.get("description") or "")
+            elif p == "/api/admin/team-agent/skill/delete":
+                from api import team_skills_admin as _ts
+                res = _ts.delete_team_skill(body.get("skill_dir") or "")
             elif p == "/api/admin/agent-dialog/start":
                 from api import agent_dialog as _ad
                 res = _ad.start_dialog(body.get("kind") or "", body.get("ref") or {})
@@ -6108,6 +6175,9 @@ def handle_post(handler, parsed) -> bool:
         "/api/knowledge/merge", "/api/knowledge/to-requirement",
         "/api/knowledge/new-design", "/api/knowledge/notify",
         "/api/knowledge/new-decision", "/api/knowledge/delete-item",
+        "/api/knowledge/project-create", "/api/knowledge/to-project-req",
+        "/api/knowledge/project-update", "/api/knowledge/project-req-update",
+        "/api/knowledge/deliverable-create", "/api/knowledge/deliverable-update",
     ):
         from api import users as _users
         from api import knowledge_ops as _ops
@@ -6132,6 +6202,29 @@ def handle_post(handler, parsed) -> bool:
                 res = _ops.archive_delete(body.get("category") or "", body.get("id") or "", admin)
             elif p == "/api/knowledge/new-decision":
                 res = _ops.new_decision(body.get("title") or "", admin)
+            elif p == "/api/knowledge/project-create":
+                from api import projects as _prj
+                res = _prj.create_project(body or {}, creator=admin)
+            elif p == "/api/knowledge/to-project-req":
+                from api import projects as _prj
+                res = _prj.signal_to_project_req(
+                    body.get("signal_id") or "", body.get("project") or "", admin,
+                    owner=body.get("owner") or "")
+            elif p == "/api/knowledge/project-update":
+                from api import projects as _prj
+                res = _prj.update_project_field(
+                    body.get("project") or "", body.get("field") or "", body.get("value") or "", admin)
+            elif p == "/api/knowledge/project-req-update":
+                from api import projects as _prj
+                res = _prj.update_project_req(
+                    body.get("project") or "", body.get("file") or "", body.get("updates") or {}, admin)
+            elif p == "/api/knowledge/deliverable-create":
+                from api import projects as _prj
+                res = _prj.create_deliverable(body.get("project") or "", body or {}, creator=admin)
+            elif p == "/api/knowledge/deliverable-update":
+                from api import projects as _prj
+                res = _prj.update_deliverable(
+                    body.get("project") or "", body.get("file") or "", body.get("updates") or {}, admin)
             else:
                 return j(handler, {"error": "未知操作"}, status=404)
         except Exception as e:

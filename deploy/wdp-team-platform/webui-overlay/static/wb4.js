@@ -186,15 +186,58 @@ async function pickSignalToReq(){
 
 window.wbSignalToReq = async function(signalId){
   const members = await getMemberOptions(true);
+  // 沉淀去向：公共需求池 / 某个已开档项目 / 新建项目并归入（信号可随时归类）
+  let prjOptions = [];
+  try{
+    const pj = await api('/api/knowledge/projects');
+    prjOptions = (pj.projects||[]).filter(p=>p.status!=='已结项')
+      .map(p=>({value:'prj:'+p.dir, label:`📦 项目：${p.title}（${p.customer||'—'}）`}));
+  }catch(_){}
+  const destOptions = [
+    {value:'pool', label:'📋 公共需求池'},
+    ...prjOptions,
+    {value:'__new__', label:'＋ 新建项目并归入（项目信号，项目还没建）'},
+  ];
   const form = await wbForm('沉淀为需求', [
-    {key:'priority', label:'需求优先级', type:'select', value:'P2', options:['P0','P1','P2','P3']},
+    {key:'dest', label:'沉淀去向', type:'select', value:'pool', options:destOptions},
+    {key:'priority', label:'需求优先级（仅公共需求池用）', type:'select', value:'P2', options:['P0','P1','P2','P3']},
     {key:'owner', label:'分配负责人', type:'select', value:'待分配', options:members},
-  ], {icon:'📋', okText:'沉淀'});
+  ], {icon:'📋', okText:'下一步'});
   if(!form) return;
   const owner = form.owner==='待分配' ? '' : form.owner;
+  let pdir = null;
+  // 选「新建项目并归入」→ 先弹开档表单建项目
+  if(form.dest === '__new__'){
+    const pf = await wbForm('新建项目（开档）', [
+      {key:'title', label:'项目名称', type:'text', required:true, placeholder:'如 XX市政数字孪生项目'},
+      {key:'customer', label:'客户名称', type:'text', required:true},
+      {key:'opportunity', label:'商机号', type:'text', placeholder:'如 SJ-2026-001'},
+      {key:'phase', label:'阶段', type:'select', value:'售前', options:['售前','交付中','售后']},
+      {key:'bd_owner', label:'BD 负责人', type:'text'},
+      {key:'tb_contact', label:'客户 TB 对接人', type:'text'},
+      {key:'description', label:'项目概述', type:'textarea', required:true},
+    ], {icon:'📦', okText:'开档并沉淀'});
+    if(!pf) return;
+    try{
+      const pr = await api('/api/knowledge/project-create', {method:'POST', body:JSON.stringify(pf)});
+      if(!pr.dir){ toast('开档失败', true); return; }
+      pdir = pr.dir;
+      toast('项目「'+(pf.title)+'」已开档');
+    }catch(e){ toast('开档失败：'+e.message, true); return; }
+  }else if(form.dest.startsWith('prj:')){
+    pdir = form.dest.slice(4);
+  }
   try{
-    const d = await api('/api/knowledge/to-requirement', {method:'POST', body:JSON.stringify({signal_id:signalId, priority:form.priority, owner})});
-    toast(`已沉淀为需求 ${d.req_id}`);
+    if(pdir){
+      // → 项目需求（PREQ）
+      const d = await api('/api/knowledge/to-project-req', {method:'POST', body:JSON.stringify({
+        signal_id:signalId, project:pdir, owner })});
+      toast(d.message || `已沉淀为项目需求 ${d.id}`);
+    }else{
+      // → 公共需求池（REQ）
+      const d = await api('/api/knowledge/to-requirement', {method:'POST', body:JSON.stringify({signal_id:signalId, priority:form.priority, owner})});
+      toast(`已沉淀为需求 ${d.req_id}`);
+    }
     W.LOADED.board=false; if(window.wbRefreshRailCnt)window.wbRefreshRailCnt();
     W.loadSignals(); W.loadRequirements();
   }catch(e){ toast('沉淀失败：'+e.message, true); }
@@ -711,34 +754,62 @@ window.wbLoadReqTrace = async function(reqId, row){
 // ════════════════════════════════════════════════
 // #2：工作台「我的」tab —— 与我相关的信号/需求/设计
 // ════════════════════════════════════════════════
+let _mineTab = 'signals';   // 「我的」三级 tab 当前选中
+
 window.wbLoadMine = async function(){
   const box = document.getElementById('mineBox');
   if(!box) return;
+  // 三级 tab 绑定（幂等）
+  document.querySelectorAll('#tab-mine .tab[data-minetab]').forEach(t=>{
+    if(t._bound) return; t._bound=1;
+    t.addEventListener('click', ()=>{
+      document.querySelectorAll('#tab-mine .tab[data-minetab]').forEach(x=>x.classList.remove('active'));
+      t.classList.add('active');
+      _mineTab = t.dataset.minetab;
+      window.wbLoadMine();
+    });
+  });
   box.innerHTML = '<div style="color:var(--ink-3);padding:12px">加载中…</div>';
   const me = (window.__wb && window.__wb.USER && window.__wb.USER.username) || '';
+  const sec = (title, items, cols) => {
+    if(!items.length) return '';
+    return `<div style="margin-bottom:18px">
+      <div style="font-size:13px;font-weight:700;color:var(--brand-strong);margin-bottom:8px">${title}（${items.length}）</div>
+      ${items.map(x=>`<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--line-2);border-radius:10px;margin-bottom:6px;background:rgba(255,255,255,.6);font-size:13px">
+        <span style="font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h(x.title||x.id||'')}</span>
+        ${cols.map(c=>x[c]?`<span class="tag ${c==='status'?stColor(x[c]):'gray'}" style="flex-shrink:0">${h(c==='status'?stLabel(x[c]):x[c])}</span>`:'').join('')}
+      </div>`).join('')}
+    </div>`;
+  };
   try{
-    const [sig, req, dsn] = await Promise.all([
-      api('/api/knowledge/signals'), api('/api/knowledge/requirements'), api('/api/knowledge/designs')
-    ]);
-    const mySig = (sig.items||[]).filter(x=>x.assignee===me || x.submitted_by===me);
-    const myReq = (req.items||[]).filter(x=>x.owner===me);
-    const myDsn = (dsn.items||[]).filter(x=>x.designer===me || x.reviewer===me);
-    const sec = (title, items, cols) => {
-      if(!items.length) return '';
-      return `<div style="margin-bottom:18px">
-        <div style="font-size:13px;font-weight:700;color:var(--brand-strong);margin-bottom:8px">${title}（${items.length}）</div>
-        ${items.map(x=>`<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--line-2);border-radius:10px;margin-bottom:6px;background:rgba(255,255,255,.6);font-size:13px">
-          <span style="font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h(x.title||x.id||'')}</span>
-          ${cols.map(c=>x[c]?`<span class="tag ${c==='status'?stColor(x[c]):'gray'}" style="flex-shrink:0">${h(c==='status'?stLabel(x[c]):x[c])}</span>`:'').join('')}
-        </div>`).join('')}
-      </div>`;
-    };
-    const html = sec('📥 与我相关的信号', mySig, ['status','urgency'])
-               + sec('📋 我负责的需求', myReq, ['status','priority'])
-               + sec('📐 我的设计稿', myDsn, ['status']);
+    let html = '';
+    if(_mineTab === 'signals'){
+      const sig = await api('/api/knowledge/signals');
+      html = sec('📥 与我相关的信号', (sig.items||[]).filter(x=>x.assignee===me || x.submitted_by===me), ['status','urgency']);
+    }else if(_mineTab === 'requirements'){
+      const req = await api('/api/knowledge/requirements');
+      html = sec('📋 我负责的需求', (req.items||[]).filter(x=>x.owner===me), ['status','priority']);
+    }else if(_mineTab === 'designs'){
+      const dsn = await api('/api/knowledge/designs');
+      html = sec('📐 我的设计稿', (dsn.items||[]).filter(x=>x.designer===me || x.reviewer===me), ['status']);
+    }else if(_mineTab === 'projects'){
+      // 我负责的项目 + 我名下的项目需求
+      const pj = await api('/api/knowledge/projects');
+      const myPrj = (pj.projects||[]).filter(x=>x.owner===me);
+      html = sec('📦 我负责的项目', myPrj.map(x=>({...x, title:`${x.title}（${x.customer||'—'} · ${x.phase||'—'}）`})), ['status']);
+      // 逐项目找我名下的项目需求（数量少，串行可接受）
+      let myReqs = [];
+      for(const p of (pj.projects||[])){
+        try{
+          const d = await api('/api/knowledge/project?dir='+encodeURIComponent(p.dir));
+          myReqs = myReqs.concat((d.requirements||[]).filter(r=>r.owner===me).map(r=>({...r, title:`[${p.title}] ${r.title||r.id}`})));
+        }catch(_){}
+      }
+      html += sec('📋 我名下的项目需求', myReqs, ['status','priority']);
+    }
+    const tabName = {signals:'信号',requirements:'需求',designs:'设计',projects:'项目'}[_mineTab];
     box.innerHTML = html || `<div style="color:var(--ink-3);padding:20px;text-align:center;font-size:13px">
-      暂无与你（${h(me)}）相关的工作项。<br>
-      <span style="font-size:12px">被指派确认的信号、分配给你的需求、你负责的设计会出现在这里。</span></div>`;
+      暂无与你（${h(me)}）相关的${tabName}。</div>`;
   }catch(e){
     box.innerHTML = `<div style="color:var(--danger);padding:12px">加载失败：${h(e.message)}</div>`;
   }
@@ -965,6 +1036,177 @@ async function newCustomTask(){
   try{
     await api('/api/admin/tasks/create', {method:'POST', body:JSON.stringify({name, schedule, prompt:promptText})});
     toast('已创建自定义任务（默认关闭）'); window.wbLoadTasks();
+  }catch(e){ toast('创建失败：'+e.message, true); }
+}
+
+// ════════════════════════════════════════════════
+// 📦 项目 tab —— 项目列表 + 三级（需求/交付材料/档案）
+// ════════════════════════════════════════════════
+let _prjCur = null;      // 当前打开的项目 dir
+let _prjTab = 'reqs';    // 三级 tab
+
+window.wbLoadProjects = async function(){
+  const listV = document.getElementById('prjListView');
+  const detV = document.getElementById('prjDetailView');
+  if(!listV) return;
+  // 回列表视图
+  listV.classList.remove('hidden'); if(detV) detV.classList.add('hidden');
+  _prjCur = null;
+  const rows = document.getElementById('projectRows');
+  if(rows) rows.innerHTML = '<tr><td colspan="7" style="color:var(--ink-3)">加载中…</td></tr>';
+  let d;
+  try{ d = await api('/api/knowledge/projects'); }
+  catch(e){ if(rows) rows.innerHTML = `<tr><td colspan="7" style="color:var(--danger)">加载失败：${h(e.message)}</td></tr>`; return; }
+  const pjs = d.projects || [];
+  // 二级 tab 徽标
+  const badge = document.querySelector('#viewBoard .tab[data-tab="projects"] .badge');
+  if(badge) badge.textContent = pjs.length;
+  if(rows){
+    rows.innerHTML = pjs.length ? pjs.map(p=>`
+      <tr class="exp-row prj-row" data-dir="${h(p.dir)}" style="cursor:pointer">
+        <td style="text-align:left;font-weight:600">${h(p.title)}</td>
+        <td>${h(p.customer||'—')}</td>
+        <td><span class="tag gray">${h(p.phase||'—')}</span></td>
+        <td>${h(p.owner||'—')}</td>
+        <td><span class="tag ${p.status==='进行中'?'green':'gray'}">${h(p.status||'—')}</span></td>
+        <td>${p.req_count}</td><td>${p.dlv_count}</td>
+      </tr>`).join('')
+      : '<tr><td colspan="7" style="color:var(--ink-3);padding:20px">还没有项目。成员可「📨 申请开档」提交审核，管理员可「＋ 直接开档」。</td></tr>';
+    rows.querySelectorAll('.prj-row').forEach(r=>r.addEventListener('click', ()=>wbOpenProject(r.dataset.dir)));
+  }
+  // 按钮绑定（幂等）
+  const applyBtn = document.getElementById('prjApplyBtn');
+  if(applyBtn && !applyBtn._b){ applyBtn._b=1; applyBtn.onclick = prjApply; }
+  const createBtn = document.getElementById('prjCreateBtn');
+  if(createBtn && !createBtn._b){ createBtn._b=1; createBtn.onclick = prjCreate; }
+  const backBtn = document.getElementById('prjBackBtn');
+  if(backBtn && !backBtn._b){ backBtn._b=1; backBtn.onclick = ()=>window.wbLoadProjects(); }
+  // 三级 tab 绑定（幂等）
+  document.querySelectorAll('#prjDetailView .tab[data-prjtab]').forEach(t=>{
+    if(t._b) return; t._b=1;
+    t.addEventListener('click', ()=>{
+      document.querySelectorAll('#prjDetailView .tab[data-prjtab]').forEach(x=>x.classList.remove('active'));
+      t.classList.add('active');
+      _prjTab = t.dataset.prjtab;
+      ['reqs','dlvs','file'].forEach(k=>{
+        const el = document.getElementById('prjtab-'+k);
+        if(el) el.classList.toggle('hidden', k!==_prjTab);
+      });
+    });
+  });
+};
+
+async function wbOpenProject(pdir){
+  _prjCur = pdir;
+  const listV = document.getElementById('prjListView');
+  const detV = document.getElementById('prjDetailView');
+  listV.classList.add('hidden'); detV.classList.remove('hidden');
+  let d;
+  try{ d = await api('/api/knowledge/project?dir='+encodeURIComponent(pdir)); }
+  catch(e){ toast('项目加载失败：'+e.message, true); return; }
+  const m = d.meta || {};
+  document.getElementById('prjDetailTitle').textContent = '📦 ' + (m.title || pdir);
+  document.getElementById('prjDetailMeta').textContent = `${m.customer||'—'} · ${m.phase||'—'} · 负责人 ${m.owner||'—'} · ${m.status||''}`;
+  // 需求表
+  const reqs = d.requirements || [];
+  document.getElementById('prjReqBadge').textContent = reqs.length;
+  document.getElementById('prjReqRows').innerHTML = reqs.length ? reqs.map(r=>`
+    <tr><td>${h(r.id||'')}</td><td style="text-align:left">${h(r.title||'')}</td>
+    <td><span class="tag gray">${h(r.priority||'—')}</span></td>
+    <td><span class="tag ${r.status==='已交付'?'green':'gray'}">${h(r.status||'—')}</span></td>
+    <td>${h(r.owner||'—')}</td><td style="font-size:11px">${h((r.source_signals||[]).join(', ')||'—')}</td></tr>`).join('')
+    : '<tr><td colspan="6" style="color:var(--ink-3);padding:16px">暂无项目需求。到「信号」页选中信号 →「沉淀为项目需求」，或点上方按钮。</td></tr>';
+  // 材料表
+  const dlvs = d.deliverables || [];
+  document.getElementById('prjDlvBadge').textContent = dlvs.length;
+  document.getElementById('prjDlvRows').innerHTML = dlvs.length ? dlvs.map(v=>`
+    <tr><td>${h(v.id||'')}</td><td style="text-align:left">${h(v.title||'')}</td>
+    <td style="font-size:11px">${h(v.requirement_id||'—')}</td>
+    <td><span class="tag gray">${h(v.phase||'—')}</span></td>
+    <td><span class="tag ${v.status==='已交付'?'green':'gray'}">${h(v.status||'—')}</span></td>
+    <td>${h(v.date||'—')}</td></tr>`).join('')
+    : '<tr><td colspan="6" style="color:var(--ink-3);padding:16px">暂无交付材料。先有项目需求，再「＋ 新建材料」绑定。</td></tr>';
+  // 档案正文
+  document.getElementById('prjFileBody').textContent = (d.body||'').trim() || '（档案正文为空）';
+  // 详情页按钮
+  const s2r = document.getElementById('prjSigToReqBtn');
+  if(s2r){ s2r.onclick = ()=>prjSigToReq(pdir); }
+  const newDlv = document.getElementById('prjNewDlvBtn');
+  if(newDlv){ newDlv.onclick = ()=>prjNewDlv(pdir, reqs); }
+}
+
+// 成员：申请开档（走决策中心审核流）
+async function prjApply(){
+  const f = await wbForm('申请项目开档（提交后由管理员审核）', [
+    {key:'title', label:'项目名称', type:'text', required:true, placeholder:'如 XX市政数字孪生项目'},
+    {key:'customer', label:'客户名称', type:'text', required:true},
+    {key:'phase', label:'阶段', type:'select', options:['售前','交付中','售后']},
+    {key:'description', label:'一句话描述（做什么）', type:'textarea', required:true},
+  ]);
+  if(!f) return;
+  const today = new Date().toISOString().slice(0,10);
+  const content = `---\nid: PRJ-申请待编号\ntype: project\ndate: ${today}\ntitle: ${f.title}\ndescription: ${f.description}\ncustomer: ${f.customer}\nphase: ${f.phase||'售前'}\nowner: ${(window.__wb&&window.__wb.USER&&window.__wb.USER.username)||''}\nstatus: 进行中\n---\n\n# ${f.title}\n\n## 项目背景\n\n${f.description}\n`;
+  try{
+    await api('/api/review/submit', {method:'POST', body:JSON.stringify({
+      title: '项目开档申请：'+f.title, category: 'projects', content })});
+    toast('开档申请已提交，等待管理员在决策中心审核');
+  }catch(e){ toast('提交失败：'+(e.message||''), true); }
+}
+
+// 管理员：直接开档
+async function prjCreate(){
+  const f = await wbForm('直接开档（管理员）', [
+    {key:'title', label:'项目名称', type:'text', required:true},
+    {key:'customer', label:'客户名称', type:'text', required:true},
+    {key:'phase', label:'阶段', type:'select', options:['售前','交付中','售后']},
+    {key:'owner', label:'负责人（用户名）', type:'text'},
+    {key:'description', label:'一句话描述', type:'textarea'},
+  ]);
+  if(!f) return;
+  try{
+    const r = await api('/api/knowledge/project-create', {method:'POST', body:JSON.stringify(f)});
+    toast(r.message||'已开档');
+    window.wbLoadProjects();
+  }catch(e){ toast('开档失败：'+e.message, true); }
+}
+
+// 从公共信号池沉淀为本项目的项目需求
+async function prjSigToReq(pdir){
+  let sig;
+  try{ sig = await api('/api/knowledge/signals'); }catch(e){ toast('拉信号失败', true); return; }
+  const cands = (sig.items||[]).filter(s=>!['已转需求','已合并','已归档'].includes(s.status||''));
+  if(!cands.length){ toast('信号池没有可沉淀的活跃信号', true); return; }
+  const f = await wbForm('从信号池沉淀为项目需求', [
+    {key:'signal_id', label:'选择信号', type:'select', options:cands.map(s=>s.id+' · '+(s.title||'').slice(0,30))},
+    {key:'owner', label:'负责人（可空=待分配）', type:'text'},
+  ]);
+  if(!f) return;
+  const sid = (f.signal_id||'').split(' · ')[0];
+  try{
+    const r = await api('/api/knowledge/to-project-req', {method:'POST', body:JSON.stringify({
+      signal_id: sid, project: pdir, owner: f.owner||'' })});
+    toast(r.message||'已沉淀');
+    wbOpenProject(pdir);
+    if(window.wbRefreshRailCnt) window.wbRefreshRailCnt();
+  }catch(e){ toast('沉淀失败：'+e.message, true); }
+}
+
+// 新建交付材料（必绑项目需求）
+async function prjNewDlv(pdir, reqs){
+  if(!reqs || !reqs.length){ toast('该项目还没有项目需求，先沉淀需求再建材料', true); return; }
+  const f = await wbForm('新建交付材料（必须绑定项目需求）', [
+    {key:'title', label:'材料标题', type:'text', required:true, placeholder:'如 技术方案书 / 验收报告'},
+    {key:'requirement_id', label:'绑定项目需求', type:'select', options:reqs.map(r=>r.id+' · '+(r.title||'').slice(0,26))},
+    {key:'phase', label:'阶段', type:'select', options:['售前','售中','售后']},
+    {key:'description', label:'一句话描述', type:'textarea'},
+  ]);
+  if(!f) return;
+  try{
+    const r = await api('/api/knowledge/deliverable-create', {method:'POST', body:JSON.stringify({
+      project: pdir, title: f.title, requirement_id: (f.requirement_id||'').split(' · ')[0],
+      phase: f.phase||'售前', description: f.description||'' })});
+    toast(r.message||'已创建');
+    wbOpenProject(pdir);
   }catch(e){ toast('创建失败：'+e.message, true); }
 }
 

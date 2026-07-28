@@ -15,10 +15,38 @@ echo   To stop: close this window
 echo ============================================================
 echo.
 
-REM Kill any leftover process on port 8799
+REM ===== Kill leftover processes (retry until port 8799 is free) =====
+echo Cleaning up old processes on port 8799 ...
+setlocal enabledelayedexpansion
+set /a _try=0
+:killloop
+set _found=0
 for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":8799" ^| findstr "LISTENING"') do (
+    set _found=1
     taskkill /F /PID %%a >nul 2>&1
 )
+REM Fallback: kill any python.exe running server.py from this project (in case netstat missed a PID)
+for /f "tokens=2 delims=," %%p in ('wmic process where "name='python.exe' and commandline like '%%server.py%%'" get processid^,commandline /format:csv 2^>nul ^| findstr /i "wdp-team-hermes"') do (
+    taskkill /F /PID %%p >nul 2>&1
+)
+REM Wait a moment for the port to release, then re-check
+ping -n 2 127.0.0.1 >nul
+netstat -ano | findstr ":8799" | findstr "LISTENING" >nul 2>&1
+if not errorlevel 1 (
+    set /a _try+=1
+    if !_try! lss 5 (
+        echo   Port still busy, retrying kill ... [!_try!/5]
+        goto killloop
+    ) else (
+        echo   WARNING: port 8799 still has a listener after 5 tries.
+        echo   Close any leftover Hermes windows manually, then restart this launcher.
+        echo.
+    )
+) else (
+    echo   Port 8799 is now free.
+)
+endlocal
+echo.
 
 cd /d E:\wdp-team-hermes\web-ui
 

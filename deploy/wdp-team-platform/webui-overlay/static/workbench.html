@@ -73,10 +73,9 @@
               <select id="chatModelSelect"></select>
             </div>
             <span style="font-size:11px;color:var(--ink-3)" id="chatModelHint"></span>
-            <span id="chatTitleLabel" style="display:none;font-size:12px;font-weight:600;color:var(--ink-2);margin-left:12px"></span>
             <span id="chatBusyBar" style="display:none;align-items:center;gap:6px;font-size:11px;color:var(--brand-strong);margin-left:12px"><span class="busy-dot">●</span> agent 思考回复中…</span>
             <button class="btn sm" id="chatRetryBtn" style="margin-left:auto" title="用上一条消息重新发送（模型/网络出错时不用重新输入）">🔄 重试上一条</button>
-            <button class="btn sm" id="chatToSignalBtn" title="把对话中的洞察沉淀为信号，提交入库审核">📥 沉淀为信号</button>
+            <button class="btn sm" id="chatToSignalBtn" title="把内容提交入库审核（信号/需求/设计）">📤 提交入库</button>
           </div>
           <div class="chat-transcript" id="transcript"></div>
           <div class="chat-composer">
@@ -103,6 +102,7 @@
         <button class="tab active" data-tab="signals">📥 信号 <span class="badge">0</span></button>
         <button class="tab" data-tab="requirements">📋 需求 <span class="badge">0</span></button>
         <button class="tab" data-tab="designs">📐 设计 <span class="badge">0</span></button>
+        <button class="tab" data-tab="projects">📦 项目 <span class="badge">0</span></button>
         <button class="tab" data-tab="mine">🙋 我的</button>
         <button class="tab" data-tab="library">📚 母版库</button>
       </div>
@@ -167,9 +167,79 @@
         </div>
       </div>
 
+      <div id="tab-projects" class="hidden">
+        <!-- 项目列表（未选中项目时显示） -->
+        <div id="prjListView">
+          <div class="panel">
+            <div class="panel-head">
+              <h2>📦 项目档案</h2><span class="hint">售前/售后项目 · 点击项目进入需求与交付材料</span>
+              <div style="margin-left:auto;display:flex;gap:8px">
+                <button class="btn sm" id="prjApplyBtn">📨 申请开档</button>
+                <button class="btn sm primary admin-only" id="prjCreateBtn">＋ 直接开档</button>
+              </div>
+            </div>
+            <div class="panel-body" style="padding:0">
+              <div class="table-scroll">
+              <table>
+                <thead><tr><th>项目</th><th>客户</th><th>阶段</th><th>负责人</th><th>状态</th><th>需求</th><th>材料</th></tr></thead>
+                <tbody id="projectRows"></tbody>
+              </table>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- 项目详情（选中项目后显示：三级 tab 需求/材料/档案） -->
+        <div id="prjDetailView" class="hidden">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+            <button class="btn sm" id="prjBackBtn">← 返回项目列表</button>
+            <h2 id="prjDetailTitle" style="margin:0;font-size:17px"></h2>
+            <span id="prjDetailMeta" style="font-size:12px;color:var(--ink-3)"></span>
+          </div>
+          <div class="tabs" style="margin-bottom:12px">
+            <button class="tab active" data-prjtab="reqs">📋 项目需求 <span class="badge" id="prjReqBadge">0</span></button>
+            <button class="tab" data-prjtab="dlvs">📄 交付材料 <span class="badge" id="prjDlvBadge">0</span></button>
+            <button class="tab" data-prjtab="file">🗂 项目档案</button>
+          </div>
+          <div id="prjtab-reqs">
+            <div class="panel">
+              <div class="panel-head"><h2>项目需求</h2><span class="hint">从公共信号池「沉淀为项目需求」转入</span>
+                <div style="margin-left:auto"><button class="btn sm primary admin-only" id="prjSigToReqBtn">＋ 从信号沉淀</button></div>
+              </div>
+              <div class="panel-body" style="padding:0"><div class="table-scroll">
+                <table><thead><tr><th>编号</th><th>标题</th><th>优先级</th><th>状态</th><th>负责人</th><th>来源信号</th></tr></thead>
+                <tbody id="prjReqRows"></tbody></table>
+              </div></div>
+            </div>
+          </div>
+          <div id="prjtab-dlvs" class="hidden">
+            <div class="panel">
+              <div class="panel-head"><h2>交付材料</h2><span class="hint">必须绑定项目需求 · 含售前/售中/售后阶段</span>
+                <div style="margin-left:auto"><button class="btn sm primary admin-only" id="prjNewDlvBtn">＋ 新建材料</button></div>
+              </div>
+              <div class="panel-body" style="padding:0"><div class="table-scroll">
+                <table><thead><tr><th>编号</th><th>标题</th><th>绑定需求</th><th>阶段</th><th>状态</th><th>日期</th></tr></thead>
+                <tbody id="prjDlvRows"></tbody></table>
+              </div></div>
+            </div>
+          </div>
+          <div id="prjtab-file" class="hidden">
+            <div class="panel">
+              <div class="panel-head"><h2>项目档案</h2><span class="hint">立项要素与里程碑</span></div>
+              <div class="panel-body" id="prjFileBody" style="padding:16px 20px;white-space:pre-wrap;font-size:13px;line-height:1.75"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div id="tab-mine" class="hidden">
+        <div class="tabs" style="margin-bottom:12px">
+          <button class="tab active" data-minetab="signals">📥 信号</button>
+          <button class="tab" data-minetab="requirements">📋 需求</button>
+          <button class="tab" data-minetab="designs">📐 设计</button>
+          <button class="tab" data-minetab="projects">📦 项目</button>
+        </div>
         <div class="panel">
-          <div class="panel-head"><h2>🙋 我的工作项</h2><span class="hint">与我相关的信号 / 需求 / 设计（我提交的、分配给我的、我负责的）</span></div>
+          <div class="panel-head"><h2>🙋 我的工作项</h2><span class="hint" id="mineHint">与我相关的内容（我提交的、分配给我的、我负责的）</span></div>
           <div class="panel-body" id="mineBox" style="padding:16px 20px"></div>
         </div>
       </div>
@@ -277,10 +347,23 @@
         <div class="panel-body" id="teamModelBox" style="padding:16px"></div>
       </div>
       <div class="panel" style="margin-bottom:16px">
+        <div class="panel-head"><h2>🧩 团队技能</h2><span class="hint">用技能助手对话编辑 · 保存草稿 · 发布后成员实时同步</span>
+          <div style="margin-left:auto;display:flex;gap:8px"><button class="btn sm primary" id="newTeamSkillBtn">＋ 新建技能</button><button class="btn sm" id="reloadTeamSkillsBtn">🔄 刷新</button></div>
+        </div>
+        <div class="panel-body" id="teamSkillsBox" style="padding:14px 16px"><div style="color:var(--ink-3);font-size:13px">加载中…</div></div>
+      </div>
+      <div class="panel" style="margin-bottom:16px">
         <div class="panel-head"><h2>🤖 归并 Agent 规则</h2><span class="hint">智能归并时给 Agent 的分析规则，可调教</span></div>
         <div class="panel-body">
           <textarea id="mergeRuleText" style="width:100%;min-height:160px;padding:12px;border-radius:11px;border:1px solid var(--line);font-size:13px;line-height:1.6;background:rgba(255,255,255,.8);color:var(--ink);resize:vertical" placeholder="加载中…"></textarea>
           <div style="text-align:right;margin-top:8px"><button class="btn sm primary" id="saveMergeRuleBtn">保存归并规则</button></div>
+        </div>
+      </div>
+      <div class="panel" style="margin-bottom:16px">
+        <div class="panel-head"><h2>🧐 审核 Agent 规则</h2><span class="hint">决策中心审核助手的分析规则，可调教</span></div>
+        <div class="panel-body">
+          <textarea id="reviewRuleText" style="width:100%;min-height:160px;padding:12px;border-radius:11px;border:1px solid var(--line);font-size:13px;line-height:1.6;background:rgba(255,255,255,.8);color:var(--ink);resize:vertical" placeholder="加载中…"></textarea>
+          <div style="text-align:right;margin-top:8px"><button class="btn sm primary" id="saveReviewRuleBtn">保存审核规则</button></div>
         </div>
       </div>
       <!-- 主 Agent 定时任务（从成员管理迁入） -->

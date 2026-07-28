@@ -8,15 +8,15 @@
 #   3) COPY 本地 agent-src 到 /opt/hermes（web-ui 运行时通过
 #      HERMES_WEBUI_AGENT_DIR 环境变量发现 agent；docker_init.bash 也会到
 #      /opt/hermes 寻找 pyproject.toml 并安装其 Python 依赖）；
-#   4) COPY deploy/wdp-team-platform/webui-overlay/ 覆盖到 /apptoo 对应路径，
+#   4) COPY webui-overlay/ 覆盖到 /apptoo 对应路径，
 #      实现“多用户认证 + WDP 定制”的叠加层，而不改动 web-ui/ 仓库本体。
 #
 # 【重要】构建上下文必须是【项目根目录】F:\\wdp-team-hermes，
-# 以便同时访问 web-ui/、agent-src/ 和 deploy/wdp-team-platform/webui-overlay/。
+# 构建上下文 = 本仓库根目录（web-ui/、agent-src/ 均已随仓库自带，自包含构建）。
 #
 # 构建命令示例（在项目根目录下执行）：
 #   docker build \
-#     -f deploy/wdp-team-platform/Dockerfile \
+#     -f Dockerfile \
 #     -t wdp-team-platform:latest \
 #     .
 # =============================================================================
@@ -102,7 +102,7 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/b
 # -----------------------------------------------------------------------------
 # 4) COPY 官方 web-ui 源码到 /apptoo
 #    注意：构建上下文是项目根目录，所以路径前缀是 web-ui/
-#    配合 .dockerignore（位于 deploy/wdp-team-platform/）排除掉
+#    配合 .dockerignore（位于仓库根）排除掉
 #    __pycache__、.git、本地 venv 等。
 # -----------------------------------------------------------------------------
 COPY --chown=root:root web-ui/ /apptoo
@@ -133,7 +133,7 @@ COPY --chown=root:root agent-src/ /opt/hermes
 # 6) COPY WDP overlay 覆盖到 /apptoo（核心定制层）
 #
 #    overlay 目录结构与 /apptoo 对齐：
-#        deploy/wdp-team-platform/webui-overlay/
+#        webui-overlay/
 #            api/users.py               → /apptoo/api/users.py
 #            api/auth.py                → /apptoo/api/auth.py     （多用户认证）
 #            api/routes.py              → /apptoo/api/routes.py
@@ -142,15 +142,15 @@ COPY --chown=root:root agent-src/ /opt/hermes
 #    因为 docker_init.bash 启动时会 rsync /apptoo → /app，
 #    overlay 文件会在容器启动时自然出现在 /app 中，被 server.py 加载。
 # -----------------------------------------------------------------------------
-COPY --chown=root:root deploy/wdp-team-platform/webui-overlay/ /apptoo/
+COPY --chown=root:root webui-overlay/ /apptoo/
 
 # 7) 团队 skills（个人中心"团队技能"只读展示 + agent 加载）→ 镜像内置
-COPY --chown=root:root deploy/wdp-team-platform/team-config/skills/ /opt/hermes-team-skills/
+COPY --chown=root:root team-config/skills/ /opt/hermes-team-skills/
 
 # 8) agent 提交/画像/个人skill 沉淀脚本 → 镜像内置（启动脚本会同步到 PVC 的 hermes-home/scripts/）
-COPY --chown=root:root deploy/wdp-team-platform/scripts/submit_review.py \
-     deploy/wdp-team-platform/scripts/update_member_profile.py \
-     deploy/wdp-team-platform/scripts/save_personal_skill.py \
+COPY --chown=root:root scripts/submit_review.py \
+     scripts/update_member_profile.py \
+     scripts/save_personal_skill.py \
      /opt/wdp-scripts/
 
 # -----------------------------------------------------------------------------

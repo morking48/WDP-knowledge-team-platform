@@ -222,7 +222,16 @@ def delete_channel(cid: str) -> dict:
     data['channels'] = [c for c in data.get('channels', []) if c.get('id') != cid]
     if data.get('active_id') == cid:
         data['active_id'] = (data['channels'][0]['id'] if data['channels'] else None)
+    was_chat_default = data.get('chat_channel_id') == cid
+    if was_chat_default:
+        data['chat_channel_id'] = ''
     _write_json(_channels_file(), data)
+    # 删的是当前对话模型 → 自动切回团队默认，防 config 残留指向已删渠道
+    if was_chat_default:
+        try:
+            set_chat_model('')
+        except Exception:
+            logger.warning('delete_channel: reset chat model to team default failed')
     return {'ok': True}
 
 
@@ -331,9 +340,13 @@ def get_chat_model_options() -> dict:
             'provider': c.get('provider'),
             'model': model,
         })
-    # 读当前 profile config 的 default，判断选中项
+    # 读当前选中项：优先用落盘的渠道 id（唯一标识，不靠 model 名反推——
+    # 否则团队默认和某渠道同 model 时会误判选中），渠道已删/禁用则回落团队默认
     current = _current_profile_default_model()
-    return {'options': opts, 'current_model': current}
+    sel_id = data.get('chat_channel_id') or ''
+    if sel_id and not any(o.get('id') == sel_id for o in opts):
+        sel_id = ''   # 选中的渠道已不在可用列表 → 视为团队默认
+    return {'options': opts, 'current_model': current, 'current_channel_id': sel_id}
 
 
 def _profile_config_path() -> Path:
@@ -437,6 +450,10 @@ def set_chat_model(cid: str) -> dict:
         else:
             cfg.pop('model', None)
         p.write_text(_yaml.dump(cfg, default_flow_style=False, allow_unicode=True, sort_keys=False), encoding='utf-8')
+        # 记录选中态（空 = 团队默认），供下拉回显
+        data0 = _read_json(_channels_file(), {'channels': [], 'active_id': None})
+        data0['chat_channel_id'] = ''
+        _write_json(_channels_file(), data0)
         return {'ok': True, 'current_model': '', 'label': '团队默认模型'}
     data = _read_json(_channels_file(), {'channels': [], 'active_id': None})
     chan = next((c for c in data.get('channels', []) if c.get('id') == cid), None)
@@ -461,6 +478,9 @@ def set_chat_model(cid: str) -> dict:
         model_section.pop('base_url', None)   # 无自定义端点时清掉残留 base_url
     cfg['model'] = model_section
     p.write_text(_yaml.dump(cfg, default_flow_style=False, allow_unicode=True, sort_keys=False), encoding='utf-8')
+    # 记录选中的渠道 id，供下拉回显（比用 model 名反推可靠）
+    data['chat_channel_id'] = cid
+    _write_json(_channels_file(), data)
     return {'ok': True, 'current_model': model,
             'label': f"{chan.get('name') or chan.get('provider')} · {model}"}
 

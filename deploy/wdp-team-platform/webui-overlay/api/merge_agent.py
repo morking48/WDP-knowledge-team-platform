@@ -114,6 +114,39 @@ def save_merge_rule(content: str) -> dict:
         return {'error': str(e)}, 500
 
 
+# ── 审核规则（审核助手的调教规则，与归并规则平级）──────────────────
+_DEFAULT_REVIEW_RULE = """你是 WDP 产品团队知识库的审核助手，协助管理员审核成员提交的入库申请。
+
+审核原则：
+- 质量：内容是否具体、有事实依据，避免空泛描述；必填字段是否完整。
+- 查重：与现有知识库条目对比，主题重复的标记重复风险并指出疑似条目。
+- 归类：判断申请归入 signals/requirements/designs/decisions/projects 哪个类目最合适（projects=项目开档申请：内容是给某个售前/售后项目立项建档）。
+- 分配：适合跟进的申请，按成员职责给出建议负责人。
+- 建议驳回时给出具体、可改进的理由（发给提交人）。"""
+
+
+def _review_rule_path() -> Path:
+    return _team_home() / 'review-rule.txt'
+
+
+def get_review_rule() -> str:
+    p = _review_rule_path()
+    if p.is_file():
+        try:
+            return p.read_text(encoding='utf-8')
+        except Exception:
+            pass
+    return _DEFAULT_REVIEW_RULE
+
+
+def save_review_rule(content: str) -> dict:
+    try:
+        _review_rule_path().write_text(content or _DEFAULT_REVIEW_RULE, encoding='utf-8')
+        return {'ok': True}
+    except Exception as e:
+        return {'error': str(e)}, 500
+
+
 def _team_key_and_model():
     """从团队 .env + config.yaml 读 OpenRouter key 和默认模型。"""
     home = _team_home()
@@ -232,12 +265,19 @@ def analyze_review(profile: str, fname: str) -> dict:
 
     # 现有知识库摘要(查重用)
     existing = []
-    for cat in ('signals', 'requirements', 'designs', 'decisions'):
+    for cat in ('signals', 'requirements', 'designs', 'decisions', 'projects'):
         try:
             for it in _kb.scan_category(cat):
                 existing.append(f"[{cat}] {it.get('id','')} {it.get('title','')}")
         except Exception:
             pass
+    # 项目档案在子目录（projects/<名>/project.md），scan_category 扫不到，单独注入
+    try:
+        from api.projects import list_projects
+        for pj in list_projects().get('projects', []):
+            existing.append(f"[projects] {pj.get('id','')} {pj.get('title','')} 客户={pj.get('customer','')} 阶段={pj.get('phase','')}")
+    except Exception:
+        pass
 
     history = ''
     hist_count = 0
@@ -248,7 +288,7 @@ def analyze_review(profile: str, fname: str) -> dict:
     except Exception:
         pass
 
-    prompt = f"""你是 WDP 产品团队知识库的审核助手。管理员正在审核一条成员提交的入库申请，请给出专业分析建议。
+    prompt = f"""{get_review_rule()}
 {history}
 ## 待审提交
 提交人：{meta.get('username','')}  申报类目：{meta.get('category','')}  标题：{meta.get('title','')}
@@ -259,7 +299,7 @@ def analyze_review(profile: str, fname: str) -> dict:
 {chr(10).join(existing[:40])}
 
 请只返回 JSON：
-{{"suggested_category": "建议归入的类目(signals/requirements/designs/decisions)",
+{{"suggested_category": "建议归入的类目(signals/requirements/designs/decisions/projects)",
   "duplicate_risk": "无/低/中/高",
   "duplicate_of": "若疑似重复,写出相关条目id,否则空串",
   "quality_notes": "内容质量简评(字段完整性/表述清晰度,一两句)",

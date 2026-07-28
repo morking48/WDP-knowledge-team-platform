@@ -150,7 +150,19 @@ function syncChips(){
 // R40 状态模型：activeSid=当前真实会话id；_draftMode=新对话草稿态(未发消息,不落盘)
 let _draftMode = false;
 let _realSessCount = 0;   // 侧栏真实会话数（新建上限判断）
-let _visibleCnt = {};     // sid → 对话正文真实条数（过滤 tool/空占位后，修正侧栏计数）
+// sid → 对话正文真实条数（过滤 tool/空占位后）。持久化到 localStorage：
+// 后端 message_count 是原始 len(messages)（含工具消息/空占位，严重偏大如 114 vs 13），
+// 打开过一次的会话记住真实条数，刷新/重进页面也显示一致。
+let _visibleCnt = {};
+try{ _visibleCnt = JSON.parse(localStorage.getItem('wb_visible_cnt') || '{}') || {}; }catch(_){ _visibleCnt = {}; }
+function _saveVisibleCnt(){
+  try{
+    // 只保留最近 50 条，防止无限膨胀
+    const keys = Object.keys(_visibleCnt);
+    if(keys.length > 50){ keys.slice(0, keys.length-50).forEach(k=>delete _visibleCnt[k]); }
+    localStorage.setItem('wb_visible_cnt', JSON.stringify(_visibleCnt));
+  }catch(_){}
+}
 const _MAX_SESS = 10;     // 对话卡片上限
 
 function draftKey(){ return 'wb_draft_' + (activeSid || (_draftMode ? 'new' : 'welcome')); }
@@ -184,11 +196,13 @@ async function loadSessions(){
     html += sessions.slice(0,30).map(s=>{
       const sid = s.session_id || s.id;
       const title = s.title || '未命名对话';
-      // 优先用已打开会话的对话正文真实条数（缓存），否则用后端 message_count（可能含 tool/空占位偏大）
-      const rawCnt = s.message_count!=null?s.message_count:(s.messageCount||0);
-      const cnt = (_visibleCnt[sid]!=null) ? _visibleCnt[sid] : rawCnt;
+      // 计数口径：打开过的会话用真实对话正文条数（localStorage 持久化，刷新页面也一致）；
+      // 从没打开过的不显示误导性的原始 message_count（含大量 tool/空占位，如 114 vs 13），
+      // 显示中性占位，点开后自动回填真实值。
+      const known = _visibleCnt[sid];
+      const cntLabel = (known!=null) ? (known + ' 条消息') : '点击查看';
       return `<div class="sess ${sid===activeSid?'active':''}" data-sid="${h(sid)}">
-        <div class="st">${h(title)}</div><div class="sm">${cnt} 条消息</div>
+        <div class="st">${h(title)}</div><div class="sm">${cntLabel}</div>
         <button class="sess-rename" data-sid="${h(sid)}" data-title="${h(title)}" title="重命名">✏️</button>
         <button class="sess-del" data-sid="${h(sid)}" data-title="${h(title)}" title="删除对话">🗑</button></div>`;
     }).join('');
@@ -221,6 +235,8 @@ async function loadSessions(){
         // 删的是当前会话 → 回到欢迎态
         if(delSid === activeSid){ activeSid = null; _draftMode = false;
           const tr=$('#transcript'); if(tr) tr.innerHTML=''; updateChatTitle(); }
+        // 清掉该会话的计数缓存（防 localStorage 残留）
+        delete _visibleCnt[delSid]; _saveVisibleCnt();
         toast('已删除对话');
         loadSessions();
       }catch(err){ toast('删除失败：'+err.message, true); }
@@ -298,29 +314,63 @@ function bindMentionSuggest(){
   ta.addEventListener('blur', ()=>setTimeout(closePanel, 200));
 }
 
-// R21：把对话洞察沉淀为信号 → 提交入库审核
+// R21+：通用提交入库——成员可提交信号/需求/设计，都进决策中心审核
 async function chatToSignal(){
   // 预填最后一条 AI 回复作为内容参考
   let lastAnswer = '';
   const msgs = document.querySelectorAll('#transcript .cmsg.ai .cc');
   if(msgs.length) lastAnswer = (msgs[msgs.length-1].textContent||'').trim().slice(0,300);
-  const form = await wbForm('沉淀为信号（提交入库审核）', [
-    {key:'title', label:'信号标题', type:'text', required:true, placeholder:'一句话概括这条信号'},
-    {key:'category', label:'类别', type:'select', value:'需求信号', options:['需求信号','问题信号','竞品信号','市场信号']},
-    {key:'urgency', label:'紧急度', type:'select', value:'中', options:['高','中','低']},
-    {key:'content', label:'信号内容', type:'textarea', value:lastAnswer, required:true},
-  ], {icon:'📥', okText:'提交入库'});
-  if(!form) return;
+  // 第一步：选提交类型
+  const pick = await wbForm('提交入库审核', [
+    {key:'kind', label:'内容类型', type:'select', value:'signals', options:[
+      {value:'signals', label:'📥 信号（客户反馈/问题线索/趋势）'},
+      {value:'requirements', label:'📋 需求（明确的产品需求）'},
+      {value:'designs', label:'📐 设计（产品设计稿）'},
+    ]},
+  ], {icon:'📤', okText:'下一步'});
+  if(!pick) return;
   const today = new Date().toISOString().slice(0,10);
-  const sid = 'SIG-' + today.replace(/-/g,'') + '-' + String(Math.floor(Math.random()*900)+100);
-  const md = `---\nid: ${sid}\ntype: 信号\ntitle: ${form.title}\ndescription: ${form.title}\ndate: ${today}\nsource: 对话沉淀\ncategory: ${form.category}\nurgency: ${form.urgency}\nconfidence: 中\nstatus: 待triage\n---\n\n## 信号内容\n${form.content}\n`;
+  const rnd = () => String(Math.floor(Math.random()*900)+100);
+  let form, md, category, title;
+  if(pick.kind === 'signals'){
+    form = await wbForm('提交信号（入库审核）', [
+      {key:'title', label:'信号标题', type:'text', required:true, placeholder:'一句话概括'},
+      {key:'category', label:'类别', type:'select', value:'需求信号', options:['需求信号','问题信号','竞品信号','市场信号']},
+      {key:'urgency', label:'紧急度', type:'select', value:'中', options:['高','中','低']},
+      {key:'content', label:'信号内容', type:'textarea', value:lastAnswer, required:true},
+    ], {icon:'📥', okText:'提交入库'});
+    if(!form) return;
+    category = 'signals'; title = form.title;
+    const sid = 'SIG-'+today.replace(/-/g,'')+'-'+rnd();
+    md = `---\nid: ${sid}\ntype: signal\ndate: ${today}\nsource: 对话沉淀\ntitle: ${form.title}\ndescription: ${form.title}\ncategory: ${form.category}\nurgency: ${form.urgency}\nconfidence: 中\nstatus: 待triage\n---\n\n## 信号内容\n${form.content}\n`;
+  }else if(pick.kind === 'requirements'){
+    form = await wbForm('提交需求（入库审核）', [
+      {key:'title', label:'需求标题', type:'text', required:true},
+      {key:'priority', label:'优先级', type:'select', value:'P2', options:['P0','P1','P2','P3']},
+      {key:'content', label:'需求描述（含验收标准/边界）', type:'textarea', required:true},
+    ], {icon:'📋', okText:'提交入库'});
+    if(!form) return;
+    category = 'requirements'; title = form.title;
+    const rid = 'REQ-'+today.replace(/-/g,'')+'-'+rnd();
+    md = `---\nid: ${rid}\ntype: requirement\ndate: ${today}\ntitle: ${form.title}\ndescription: ${form.title}\nstatus: 待评估\npriority: ${form.priority}\nowner: 待分配\n---\n\n## 需求描述\n${form.content}\n`;
+  }else{ // designs
+    form = await wbForm('提交设计（入库审核）', [
+      {key:'title', label:'设计标题', type:'text', required:true},
+      {key:'requirement_id', label:'关联需求ID（可填"待关联"）', type:'text', value:'待关联'},
+      {key:'content', label:'设计内容', type:'textarea', required:true},
+    ], {icon:'📐', okText:'提交入库'});
+    if(!form) return;
+    category = 'designs'; title = form.title;
+    const did = 'DSN-'+today.replace(/-/g,'')+'-'+rnd();
+    md = `---\nid: ${did}\ntype: design\ndate: ${today}\ntitle: ${form.title}\ndescription: ${form.title}\nrequirement_id: ${form.requirement_id||'待关联'}\nstatus: 草稿\n---\n\n## 设计内容\n${form.content}\n`;
+  }
   try{
     await api('/api/review/submit', {method:'POST', body:JSON.stringify({
-      title: form.title, category: 'signals', content: md,
-      suggestion: {target_category:'signals', summary:form.title}
+      title, category, content: md,
+      suggestion: {target_category:category, summary:title}
     })});
     if(window.__wb) window.__wb.toast('已提交入库审核，管理员会收到通知');
-  }catch(e){ if(window.__wb) window.__wb.toast('提交失败：'+e.message, true); }
+  }catch(e){ if(window.__wb) window.__wb.toast('提交失败：'+(e.message||''), true); }
 }
 
 async function loadChatWorkspaceList(){
@@ -510,6 +560,7 @@ async function switchSession(sid){
       });
       // 记录该会话的对话正文真实条数（供侧栏卡片计数用，修正后端把 tool/空占位也算进的口径）
       _visibleCnt[sid] = shown.length;
+      _saveVisibleCnt();
       const _cntEl = document.querySelector('#sessList .sess[data-sid="'+sid+'"] .sm');
       if(_cntEl && !/回复中/.test(_cntEl.textContent)) _cntEl.textContent = shown.length + ' 条消息';
       tr.innerHTML = shown.map(m => renderMsg(m.role, m.content||m.text||'')).join('')
@@ -546,11 +597,11 @@ async function loadModelHint(){
   try{
     const d = await api('/api/me/chat_models');
     const opts = (d && d.options) || [];
-    const cur = (d && d.current_model) || '';
-    // 找出当前选中项：current_model 匹配某渠道的 model → 选它，否则团队默认
-    let curId = '';
-    for(const o of opts){ if(o.model && o.model === cur){ curId = o.id; break; } }
+    // 选中项：后端落盘的渠道 id（唯一标识；空=团队默认）。不再用 model 名反推，
+    // 避免团队默认与某渠道同 model 时误选。
+    const curId = (d && d.current_channel_id) || '';
     sel.innerHTML = opts.map(o=>`<option value="${h(o.id)}"${o.id===curId?' selected':''}>${h(o.label)}</option>`).join('');
+    sel.dataset.prev = curId;
     if(!sel._bound){ sel._bound=1; sel.addEventListener('change', onChatModelChange); }
     if(hint){
       hint.textContent = opts.length>1 ? '' : '个人渠道可在「个人中心」配置';
@@ -861,7 +912,7 @@ async function doSend(){
     // 供侧栏计数用，避免刚发完消息卡片显示后端偏大的 message_count。
     if(activeSid === streamSid){
       const tr2 = document.getElementById('transcript');
-      if(tr2) _visibleCnt[streamSid] = tr2.querySelectorAll('.cmsg').length;
+      if(tr2){ _visibleCnt[streamSid] = tr2.querySelectorAll('.cmsg').length; _saveVisibleCnt(); }
     }
     // 刷新会话列表（标题可能更新、新对话转正）
     loadSessions();

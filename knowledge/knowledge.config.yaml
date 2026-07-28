@@ -62,6 +62,26 @@ working:
     id_prefix: null                 # 用姓名作文件名，无序号ID
     enforce_template: false         # 软提示：档案随对话沉淀，字段渐进补全
     required_fields: [type, name, department, role]
+  projects:
+    title: 项目
+    dir: projects
+    template: projects/_template.md   # 项目档案模板（project.md）
+    id_prefix: PRJ
+    enforce_template: true          # 硬校验：项目立项要素必须齐
+    required_fields: [id, type, date, title, description, customer, phase, owner, status]
+    optional_fields: [opportunity, bd_owner, tb_contact]   # 商机号/BD负责人/TB对接人（软性，可后补）
+    # 项目子结构（每个项目一个子目录，物理隔离；最多3层嵌套约束内）：
+    #   projects/<项目名>/project.md          项目档案
+    #   projects/<项目名>/requirements/       项目需求（PREQ-xxx，从公共信号池沉淀转入）
+    #   projects/<项目名>/deliverables/       交付材料（DLV-xxx，必须绑定项目需求，含售前/售中/售后 phase）
+    sub_requirements:
+      id_prefix: PREQ
+      template: projects/_req_template.md
+      required_fields: [id, type, date, title, description, project, status, priority, owner]
+    sub_deliverables:
+      id_prefix: DLV
+      template: projects/_dlv_template.md
+      required_fields: [id, type, date, title, description, project, requirement_id, phase, status]
 
 # ── 母版知识库：相对稳定的沉淀 ──
 library:

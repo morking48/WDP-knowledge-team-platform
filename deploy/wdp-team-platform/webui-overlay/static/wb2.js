@@ -345,8 +345,93 @@ window.loadTeamAgent = async function(){
       }catch(e){ toast('保存失败：'+e.message, true); }
     };
   }catch(_){}
+  // 审核规则（与归并规则平级，驱动决策中心审核助手）
+  try{
+    const rr = await api('/api/admin/review/rule');
+    const rrt = $('#reviewRuleText');
+    if(rrt) rrt.value = rr.rule || '';
+    const rrb = $('#saveReviewRuleBtn');
+    if(rrb) rrb.onclick = async ()=>{
+      try{
+        await api('/api/admin/team-agent/review-rule', {method:'POST', body:JSON.stringify({rule: $('#reviewRuleText').value})});
+        toast('已保存审核规则');
+      }catch(e){ toast('保存失败：'+e.message, true); }
+    };
+  }catch(_){}
   // 定时任务（从成员管理迁入）
   if(window.wbLoadTasks) window.wbLoadTasks();
+  // 团队技能编辑面板
+  window.loadTeamSkills();
+  const rtsBtn = $('#reloadTeamSkillsBtn');
+  if(rtsBtn) rtsBtn.onclick = ()=>window.loadTeamSkills();
+  // 新建团队技能：wbForm 表单 → 后端建骨架 → 引导用技能助手充实
+  const ntsBtn = $('#newTeamSkillBtn');
+  if(ntsBtn) ntsBtn.onclick = async ()=>{
+    const f = await wbForm('新建团队技能', [
+      {key:'skill_dir', label:'目录名（英文小写-中划线）', type:'text', required:true, placeholder:'如 competitor-analysis'},
+      {key:'name', label:'技能名称', type:'text', placeholder:'如 竞品分析方法'},
+      {key:'description', label:'一句话描述（做什么/何时触发）', type:'textarea', placeholder:'如 竞品动态跟踪与分析的标准流程'},
+    ]);
+    if(!f) return;
+    try{
+      const r = await api('/api/admin/team-agent/skill/create', {method:'POST', body:JSON.stringify(f)});
+      toast(r.message || '已创建');
+      window.loadTeamSkills();
+    }catch(e){ toast('创建失败：'+e.message, true); }
+  };
+};
+
+// ── 团队技能编辑（admin：技能助手对话改 → 存草稿 → 发布同步成员）──
+window.loadTeamSkills = async function(){
+  const box = $('#teamSkillsBox');
+  if(!box) return;
+  box.innerHTML = '<div style="color:var(--ink-3);font-size:13px">加载中…</div>';
+  let d;
+  try{ d = await api('/api/admin/team-agent/skills'); }
+  catch(e){ box.innerHTML = `<div style="color:var(--danger)">加载失败：${h(e.message)}</div>`; return; }
+  const skills = d.skills || [];
+  if(!skills.length){ box.innerHTML = '<div style="color:var(--ink-3);font-size:13px">暂无团队技能</div>'; return; }
+  box.innerHTML = skills.map(s=>`
+    <div style="display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--line-2);border-radius:10px;margin-bottom:8px;background:rgba(255,255,255,.55)">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600">${h(s.name||s.dir)}${s.protected?' <span class="tag green" style="font-size:10px">内置</span>':''}${s.has_draft?' <span class="tag" style="font-size:10px;background:#fef3c7;color:#b45309">有未发布草稿</span>':''}</div>
+        <div style="font-size:12px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h(s.description||'—')}</div>
+      </div>
+      <button class="btn sm ts-edit" data-dir="${h(s.dir)}" data-name="${h(s.name||s.dir)}">🤖 技能助手</button>
+      ${s.has_draft?`<button class="btn sm primary ts-pub" data-dir="${h(s.dir)}">🚀 发布</button><button class="btn sm ts-discard" data-dir="${h(s.dir)}">丢弃草稿</button>`:''}
+      ${s.protected?'':`<button class="btn sm ts-del" data-dir="${h(s.dir)}" title="删除该技能（内置技能不可删）" style="color:var(--danger)">🗑</button>`}
+    </div>`).join('');
+  // 技能助手：开对话编辑
+  box.querySelectorAll('.ts-edit').forEach(b=>b.onclick=()=>{
+    if(window.wbOpenSkillDialog) window.wbOpenSkillDialog(b.dataset.dir, b.dataset.name);
+  });
+  // 发布草稿到成员
+  box.querySelectorAll('.ts-pub').forEach(b=>b.onclick=async ()=>{
+    if(!(await wbConfirm('发布会把草稿写入正式团队技能，所有成员将实时同步。确认发布？'))) return;
+    try{
+      const r = await api('/api/admin/team-agent/skill/publish', {method:'POST', body:JSON.stringify({skill_dir:b.dataset.dir})});
+      toast(r.message || '已发布，成员将实时同步');
+      window.loadTeamSkills();
+    }catch(e){ toast('发布失败：'+e.message, true); }
+  });
+  // 丢弃草稿
+  box.querySelectorAll('.ts-discard').forEach(b=>b.onclick=async ()=>{
+    if(!(await wbConfirm('丢弃这个技能的未发布草稿？'))) return;
+    try{
+      await api('/api/admin/team-agent/skill/discard', {method:'POST', body:JSON.stringify({skill_dir:b.dataset.dir})});
+      toast('已丢弃草稿');
+      window.loadTeamSkills();
+    }catch(e){ toast('操作失败：'+e.message, true); }
+  });
+  // 删除技能（内置不可删，后端双重校验）
+  box.querySelectorAll('.ts-del').forEach(b=>b.onclick=async ()=>{
+    if(!(await wbConfirm('删除团队技能「'+b.dataset.dir+'」？删除后成员将不再加载它（有备份可人工恢复）。'))) return;
+    try{
+      const r = await api('/api/admin/team-agent/skill/delete', {method:'POST', body:JSON.stringify({skill_dir:b.dataset.dir})});
+      toast(r.message || '已删除');
+      window.loadTeamSkills();
+    }catch(e){ toast('删除失败：'+e.message, true); }
+  });
 };
 
 // ── 技能页（团队只读 + 个人可开关/删除）──
@@ -432,7 +517,7 @@ function renderChannels(){
   const box = $('#channelList');
   if(!box || !_chData) return;
   const provs = _chData.providers || {};
-  const PICON = {'OpenRouter':'🌐','DeepSeek':'🔷','Kimi':'🌙','Anthropic':'🅰️','自定义OpenAI兼容':'⚙️'};
+  const PICON = {'OpenRouter':'🌐','DeepSeek':'🔷','Kimi':'🌙','Anthropic':'🅰️','Claude(n1n代理)':'🅰️','GitHub Copilot':'🐙','自定义OpenAI兼容':'⚙️'};
   const chans = _chData.channels || [];
   if(!chans.length){
     box.innerHTML = '<div style="color:var(--ink-3);padding:12px;font-size:13px">还没有配置渠道。点右上「＋ 添加渠道」，或不配则对话走团队公共 Key 兜底。</div>';
@@ -455,7 +540,8 @@ function renderChannels(){
         <div class="ch-row"><div class="k">渠道名称</div><input type="text" value="${h(c.name)}" data-f="name"></div>
         <div class="ch-row"><div class="k">服务商</div>
           <select data-f="provider">${Object.keys(provs).map(p=>`<option ${p===c.provider?'selected':''}>${h(p)}</option>`).join('')}</select></div>
-        <div class="ch-row"><div class="k">API Key</div><input type="password" value="" data-f="key" placeholder="${c.has_key?'已配置（'+h(c.key_masked)+'），留空不改':'sk-...'}"></div>
+        <div class="ch-row"><div class="k">${c.provider==='GitHub Copilot'?'Copilot Token':'API Key'}</div><input type="password" value="" data-f="key" placeholder="${c.has_key?'已配置（'+h(c.key_masked)+'），留空不改':(c.provider==='GitHub Copilot'?'gho_... / ghu_...（你的 GitHub Copilot token）':'sk-...')}"></div>
+        ${c.provider==='GitHub Copilot'?`<div class="ch-row"><div class="k"></div><div style="font-size:11px;color:var(--ink-3);line-height:1.6">💡 用你自己的 GitHub Copilot 订阅额度。获取 token：本机装了 GitHub Copilot（VS Code 插件或 <code>gh</code> CLI）并登录后，token 在 <code>~/.config/github-copilot/</code> 或运行 <code>gh auth token</code> 获取（gho_/ghu_ 开头）。填入后点「测试连通性」验证。</div></div>`:''}
         ${c.provider==='自定义OpenAI兼容'?`<div class="ch-row"><div class="k">Base URL</div><input type="text" value="${h(c.base_url)}" data-f="base_url" placeholder="https://..."></div>`:''}
         <div class="ch-row"><div class="k">模型</div>
           ${models.length?`<select data-f="model">${models.map(m=>`<option ${m===c.model?'selected':''}>${h(m)}</option>`).join('')}</select>`:`<input type="text" value="${h(c.model)}" data-f="model" placeholder="模型ID">`}</div>
@@ -706,36 +792,42 @@ async function loadMeLogs(){
   const bar = document.querySelector('#me-logs .log-bar');
   if(bar){
     const opts = entries.length
-      ? entries.map(e=>`<option value="${h(e.file)}">${h(e.file)}</option>`).join('')
+      ? entries.map((e,i)=>`<option value="${i}">${h(e.file)}</option>`).join('')
       : '<option value="">（无日志文件）</option>';
     bar.innerHTML = `
       <select id="logFileSel">${opts}</select>
       <input id="logFilter" placeholder="过滤关键字…">
       <button class="btn sm" id="logRefreshBtn">刷新</button>
       <button class="btn sm" id="logDownloadBtn">下载</button>`;
+    const sel = bar.querySelector('#logFileSel');
+    const filt = bar.querySelector('#logFilter');
+    // 切换文件下拉 → 只渲染选中的那个日志文件
+    sel.addEventListener('change', ()=>renderLogBox(entries, filt.value, sel.value));
+    filt.addEventListener('input', ()=>renderLogBox(entries, filt.value, sel.value));
     bar.querySelector('#logRefreshBtn').onclick = ()=>{ _meLoaded.logs=false; loadMeSub('logs'); };
     bar.querySelector('#logDownloadBtn').onclick = ()=>{
-      const f = bar.querySelector('#logFileSel').value;
-      if(!f){ toast('没有可下载的日志', true); return; }
+      const idx = sel.value;
+      const e = entries[+idx];
+      if(!e){ toast('没有可下载的日志', true); return; }
       // 触发浏览器下载
-      window.location.href = '/api/me/logs/download?file='+encodeURIComponent(f);
+      window.location.href = '/api/me/logs/download?file='+encodeURIComponent(e.file);
     };
-    bar.querySelector('#logFilter').addEventListener('input', (e)=>renderLogBox(entries, e.target.value));
   }
-  renderLogBox(entries, '');
+  renderLogBox(entries, '', '0');
 }
-function renderLogBox(entries, filter){
+function renderLogBox(entries, filter, selIdx){
   const box = $('#logBox');
   if(!box) return;
   if(!entries.length){ box.innerHTML = '<div class="lt">暂无日志文件</div>'; return; }
+  // 只渲染选中的那个文件（selIdx 为下拉的索引）；缺省渲染第一个
+  const idx = (selIdx!==undefined && selIdx!=='') ? (+selIdx) : 0;
+  const e = entries[idx] || entries[0];
   const f = (filter||'').toLowerCase();
-  box.innerHTML = entries.map(e=>{
-    const head = `<div class="lw">━━ ${h(e.file)} (${(e.size/1024).toFixed(1)}KB) ━━</div>`;
-    let lines = e.tail||[];
-    if(f) lines = lines.filter(l=>l.toLowerCase().includes(f));
-    const body = lines.map(l=>`<div><span class="li">${h(l)}</span></div>`).join('') || '<div class="lt">（无匹配行）</div>';
-    return head + body;
-  }).join('');
+  const head = `<div class="lw">━━ ${h(e.file)} (${(e.size/1024).toFixed(1)}KB) ━━</div>`;
+  let lines = e.tail||[];
+  if(f) lines = lines.filter(l=>l.toLowerCase().includes(f));
+  const body = lines.map(l=>`<div><span class="li">${h(l)}</span></div>`).join('') || '<div class="lt">（无匹配行）</div>';
+  box.innerHTML = head + body;
 }
 
 })();
