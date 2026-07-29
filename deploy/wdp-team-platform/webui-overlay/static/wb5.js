@@ -123,6 +123,27 @@ window.wbAgentDialog = function(opts){
           else if(m.role==='assistant'){ const {reply}=splitProposal(m.content); addMsg('agent', mdLite(reply||'(无回复)')); }
         });
         showProposal(d.proposal);
+        // 关窗时 agent 可能还在回复（LLM 生成中，回复稍后才写进后端对话）：
+        // 最后一条是用户消息 → 轮询等回复落地后渲染，不让人误以为 agent 不回了
+        const hist = d.history||[];
+        if(hist.length && hist[hist.length-1].role==='user'){
+          const waiting = addMsg('sys','⏳ agent 上次的回复仍在生成中，等待送达…');
+          let tries = 0;
+          overlay._pollTimer = setInterval(async ()=>{
+            tries++;
+            if(tries > 20){ clearInterval(overlay._pollTimer); overlay._pollTimer=null; waiting.innerHTML='<span style="color:var(--ink-3)">回复未送达（可能生成失败），可重新发消息</span>'; return; }
+            try{
+              const r = await api('/api/admin/agent-dialog/start', {method:'POST', body:JSON.stringify({kind:opts.kind, ref:opts.ref||{}})});
+              const h2 = r.history||[];
+              if(r.resumed && h2.length && h2[h2.length-1].role==='assistant'){
+                clearInterval(overlay._pollTimer); overlay._pollTimer=null; waiting.remove();
+                const {reply} = splitProposal(h2[h2.length-1].content);
+                addMsg('agent', mdLite(reply||'(无回复)'));
+                showProposal(r.proposal);
+              }
+            }catch(_){}
+          }, 3000);
+        }
       }else{
         addMsg('agent', mdLite(d.reply||'(无回复)'));
         showProposal(d.proposal);
@@ -157,6 +178,7 @@ window.wbAgentDialog = function(opts){
   // close(purge): purge=true 才清后端对话（入库/驳回完成时）；
   // 默认关窗只移除 UI，后端对话保留 → 同一待审项再打开可续接
   function close(purge){
+    if(overlay._pollTimer){ clearInterval(overlay._pollTimer); overlay._pollTimer = null; }
     if(purge && dialogId){ api('/api/admin/agent-dialog/close', {method:'POST', body:JSON.stringify({dialog_id:dialogId})}).catch(()=>{}); }
     overlay.remove();
   }
@@ -205,6 +227,79 @@ window.wbOpenMergeDialog = function(){
 };
 
 // ── R41：审核 agent 对话（决策中心待审入库）──────────────────────────────
+// ── 审核对话内嵌补字段卡片（跨类目入库缺字段时用；不弹系统窗，避免层级遮挡/弹窗堆积）──
+function renderFillCard(missing, doApprove, dlg, prop, item, adv){
+  // 防重：已有补字段卡片时不再生成第二张（避免重复点入库产生弹窗堆积）
+  const exist = document.querySelector('.ad-msgs .fill-card');
+  if(exist){ exist.scrollIntoView({behavior:'smooth'}); return; }
+  const DEFS = {
+    priority:  {label:'优先级', type:'select', value:'P2', options:['P0','P1','P2','P3']},
+    owner:     {label:'负责人', type:'text', value:'待分配'},
+    status:    {label:'状态', type:'text', value:'待校验'},
+    urgency:   {label:'紧急度', type:'select', value:'中', options:['高','中','低']},
+    confidence:{label:'可信度', type:'select', value:'中', options:['高','中','低']},
+    source:    {label:'来源', type:'text', value:''},
+    category:  {label:'类别', type:'text', value:''},
+  };
+  const rows = missing.map(k=>{
+    const d = DEFS[k] || {label:k, type:'text', value:''};
+    const ctrl = d.type==='select'
+      ? `<select class="fc-in" data-k="${h(k)}" style="width:100%;padding:7px 10px;border-radius:8px;border:1px solid var(--line);font-size:13px;background:#fff">${d.options.map(o=>`<option ${o===d.value?'selected':''}>${h(o)}</option>`).join('')}</select>`
+      : `<input class="fc-in" data-k="${h(k)}" value="${h(d.value)}" style="width:100%;padding:7px 10px;border-radius:8px;border:1px solid var(--line);font-size:13px;background:#fff">`;
+    return `<div style="margin-bottom:9px"><label style="font-size:12px;font-weight:600;color:var(--ink-2)">${h(d.label)}<span style="color:#dc2626"> *</span></label>${ctrl}</div>`;
+  }).join('');
+  const card = dlg.addSys(`<div class="fill-card" style="text-align:left;border:1px solid rgba(180,140,40,.4);border-radius:12px;padding:12px 14px;background:rgba(180,140,40,.06);max-width:420px">
+    <div style="font-weight:700;font-size:13px;color:#9a6b1a;margin-bottom:8px">📝 归类为「${h(prop.suggested_category||item.category||'')}」还缺 ${missing.length} 个字段，补齐后入库：</div>
+    ${rows}
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
+      <button class="fc-cancel wbm-btn" style="font-size:12px">取消</button>
+      <button class="fc-ok wbm-btn wbm-primary" style="font-size:12px">补齐并入库</button>
+    </div></div>`);
+  const okBtn = card.querySelector('.fc-ok');
+  card.querySelector('.fc-cancel').onclick = ()=>{
+    card.remove();
+    dlg.addSys('已取消入库。对话保留，可继续讨论或稍后再点「入库」。');
+    dlg.el.disabled = false; dlg.el.textContent = '✓ 入库';
+  };
+  okBtn.onclick = async ()=>{
+    const extra = {};
+    card.querySelectorAll('.fc-in').forEach(inp=>{ const v=(inp.value||'').trim(); if(v) extra[inp.dataset.k]=v; });
+    const empty = missing.filter(k=>!extra[k]);
+    if(empty.length){ toast('还有必填项未填：'+empty.join('、'), true); return; }
+    okBtn.disabled = true; okBtn.textContent = '入库中…';
+    try{
+      const d = await doApprove(extra);
+      card.remove();
+      finishApprove(d, dlg, prop, item, adv);
+    }catch(err2){
+      okBtn.disabled = false; okBtn.textContent = '补齐并入库';
+      dlg.addSys(`<span style="color:var(--danger)">⚠ 仍失败：${h(err2.message)}。可修改后重试，对话已保留。</span>`);
+    }
+  };
+}
+
+// ── 入库成功后的统一收尾（记录决策/回报git/owner落地/关闭对话）──
+async function finishApprove(d, dlg, prop, item, adv){
+  api('/api/admin/team-agent/record-decision', {method:'POST', body:JSON.stringify({
+    kind:'review', entry:{title:item.title, category:item.category, decision:'通过', ai_advice:adv, reason:'', via:'dialog'}})}).catch(()=>{});
+  const gitWarn = (d.git && d.git !== 'git 已提交') ? `<br><span style="color:var(--danger)">⚠ 版本记录异常：${h(d.git)}</span>` : '';
+  dlg.addSys(`✅ 已入库到 ${h(d.final_path||'')}（决策已记录）${gitWarn}`);
+  if(prop.suggested_owner && (prop.suggested_category==='requirements' || item.category==='requirements')){
+    try{
+      const rid = (d.final_path||'').split('/').pop().replace(/\.md$/,'');
+      await api('/api/admin/knowledge/update', {method:'POST', body:JSON.stringify({
+        type:'requirements', id: rid, updates:{owner: prop.suggested_owner},
+        note:`审核agent建议分配 @${prop.suggested_owner}`})});
+      dlg.addSys(`👤 已按建议分配给 ${h(prop.suggested_owner)}（可在工作台改派）`);
+    }catch(_){ dlg.addSys('（建议负责人未能自动写入，可在工作台手动分配）'); }
+  }
+  if(dlg.el) dlg.el.disabled = true;
+  if(window.loadReview) window.loadReview();
+  if(window.wbRefreshRailCnt) window.wbRefreshRailCnt();
+  // 稍等让 admin 看到成功提示，再关闭并清除对话（审批完成）
+  setTimeout(()=>{ if(dlg.close) dlg.close(true); }, 1800);
+}
+
 window.wbOpenReviewDialog = function(item){
   window.wbAgentDialog({
     kind: 'review', icon: '🧐', title: `审核协作 · ${item.title||item.file||''}`,
@@ -228,32 +323,26 @@ window.wbOpenReviewDialog = function(item){
       const adv = (prop.recommendation||'') + (prop.reason ? ('·'+prop.reason) : '');
       if(act === 'approve'){
         // 采纳 AI 建议的归类（suggested_category），传给后端决定入库到哪个池；无建议则后端回落申报类目
+        const doApprove = (extra)=>api('/api/review/approve', {method:'POST', body:JSON.stringify({
+          user: item._profile || item.profile, file: item.file,
+          final_category: prop.suggested_category || undefined,
+          extra_fields: extra || undefined})});
         let d;
         try{
-          d = await api('/api/review/approve', {method:'POST', body:JSON.stringify({
-            user: item._profile || item.profile, file: item.file,
-            final_category: prop.suggested_category || undefined})});
+          d = await doApprove();
         }catch(err){
-          // 缺字段等入库失败：明确提示缺什么，对话保留可继续（不必关窗重来）
-          const miss = (err.data && err.data.missing) ? '：缺 '+err.data.missing.join('、') : '';
-          dlg.addSys(`<span style="color:var(--danger)">⚠ 入库未通过${miss}。请让提交人补全字段后重新提交，或和我继续讨论——本对话已保留，无需重开。</span>`);
-          throw err;   // 抛给外层，恢复按钮可点
+          const missing = (err.data && err.data.missing) || [];
+          if(missing.length){
+            // 跨类目入库缺字段（如信号→需求缺 priority/owner）：
+            // 在对话流内嵌补字段卡片（不弹系统窗，避免层级遮挡/弹窗堆积），填完就地重试入库
+            renderFillCard(missing, doApprove, dlg, prop, item, adv);
+            return;   // 卡片接管后续流程；不抛错（按钮由卡片流程控制）
+          }
+          dlg.addSys(`<span style="color:var(--danger)">⚠ 入库未通过：${h(err.message)}。对话已保留，无需重开。</span>`);
+          throw err;
         }
-        api('/api/admin/team-agent/record-decision', {method:'POST', body:JSON.stringify({
-          kind:'review', entry:{title:item.title, category:item.category, decision:'通过', ai_advice:adv, reason:'', via:'dialog'}})}).catch(()=>{});
-        // L4 稳态：git commit 结果显式回报（失败=有文件无版本记录，必须让管理员知道）
-        const gitWarn = (d.git && d.git !== 'git 已提交') ? `<br><span style="color:var(--danger)">⚠ 版本记录异常：${h(d.git)}</span>` : '';
-        dlg.addSys(`✅ 已入库到 ${h(d.final_path||'')}（决策已记录）${gitWarn}`);
-        // suggested_owner 落地：入库后按建议自动写 owner（有建议才写，写失败不阻塞）
-        if(prop.suggested_owner && (prop.suggested_category==='requirements' || item.category==='requirements')){
-          try{
-            const rid = (d.final_path||'').split('/').pop().replace(/\.md$/,'');
-            await api('/api/admin/knowledge/update', {method:'POST', body:JSON.stringify({
-              type:'requirements', id: rid, updates:{owner: prop.suggested_owner},
-              note:`审核agent建议分配 @${prop.suggested_owner}`})});
-            dlg.addSys(`👤 已按建议分配给 ${h(prop.suggested_owner)}（可在工作台改派）`);
-          }catch(_){ dlg.addSys('（建议负责人未能自动写入，可在工作台手动分配）'); }
-        }
+        await finishApprove(d, dlg, prop, item, adv);
+        return;
       }else{
         const aiReason = prop.suggested_reject_reason || prop.reason || '';
         // 让 admin 在 AI 建议理由上确认/补充再发（理由会通知提交人，须具体可操作）
@@ -269,8 +358,8 @@ window.wbOpenReviewDialog = function(item){
       dlg.el.disabled = true;
       if(window.loadReview) window.loadReview();
       if(window.wbRefreshRailCnt) window.wbRefreshRailCnt();
-      // 审批完成（入库/驳回成功）→ 清除后端对话（该待审项已处理，无需再续接）
-      if(dlg.close) dlg.close(true);
+      // 审批完成（驳回成功）→ 稍等让 admin 看到提示，再关闭并清除对话
+      setTimeout(()=>{ if(dlg.close) dlg.close(true); }, 1800);
     }
   });
 };

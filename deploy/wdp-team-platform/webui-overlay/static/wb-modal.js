@@ -16,7 +16,7 @@ function _shell(opts){
   opts = opts || {};
   const overlay = document.createElement('div');
   overlay.className = 'wbm-overlay';
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,31,22,.42);backdrop-filter:blur(6px);z-index:2000;display:flex;align-items:center;justify-content:center;padding:24px;animation:wbmFade .16s ease';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,31,22,.42);backdrop-filter:blur(6px);z-index:2600;display:flex;align-items:center;justify-content:center;padding:24px;animation:wbmFade .16s ease';
   const w = opts.width || 460;
   const card = document.createElement('div');
   card.className = 'wbm-card';
