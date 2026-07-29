@@ -70,7 +70,7 @@ function renderModeBanner(){
   if(!mode){ if(banner) banner.remove(); return; }
   const cfg = {
     design: {icon:'🎯', text:'设计收敛模式', desc:'agent 正按流程推进：批量拷问 → 不可逆决策 → 零歧义方案文档'},
-    signal: {icon:'📥', text:'信号清洗模式', desc:'粘贴原始信息，agent 会清洗成规范信号并提交入库审核'},
+    signal: {icon:'📥', text:'沉淀入库模式', desc:'粘贴原始信息（纪要/反馈/文档），agent 判类清洗成信号/需求/设计/项目并提交入库审核'},
   }[mode];
   const html = `<span style="font-weight:700">${cfg.icon} ${cfg.text}</span>
     <span style="font-size:11.5px;color:var(--ink-3);margin-left:8px">${cfg.desc}</span>
@@ -95,8 +95,10 @@ function _modeInjectedMessage(mode, msg){
       + `我的输入：${msg}`;
   }
   if(mode === 'signal'){
-    return `[信号清洗模式·请加载并按团队 skill「signal-intake」执行]\n`
-      + `把我下面提供的原始信息清洗成规范信号：提炼要点、判断类别/紧急度/可信度、补全 frontmatter 字段，整理好后用 submit_review.py 提交入库审核（category=signals）。\n`
+    return `[沉淀入库模式·请按团队规范把原始信息清洗沉淀并提交入库审核]\n`
+      + `① 先按内容本质判类（不要一律当信号）：一手事实/线索→signals（按 skill「signal-intake」清洗）；明确诉求/待办→requirements；方案/设计文档→designs；已拍板结论→decisions；客户项目立项→projects。告诉我你的判类和理由。\n`
+      + `② 按判定类目的模板补全字段（价值字段两步策略：能推导的自己补，推导不了的一次问完我）。\n`
+      + `③ 整理好后用 submit_review.py 提交入库审核（--category 用你判定的类目）。\n`
       + `原始信息：${msg}`;
   }
   return msg;
@@ -182,7 +184,7 @@ window.initChat = function(){
     inp.click();
   });
 
-  // ── 能力模式激活（设计模式 / 信号清洗）──────────────────────────────
+  // ── 能力模式激活（设计模式 / 沉淀入库）──────────────────────────────
   // 模式 = 激活一种专属 agent 工作流；开启后每条消息强制注入该流程规则（不靠 LLM 自觉读 SOUL）。
   // window._activeMode: null | 'design' | 'signal'
   window._activeMode = window._activeMode || null;
@@ -206,7 +208,7 @@ window.initChat = function(){
         : '和你的 agent 对话… 或 @成员名 发快速通知；可拖文件上传';
     }
     toast(window._activeMode==='design' ? '🎯 设计模式已激活：接下来 agent 按「设计收敛」流程推进'
-      : window._activeMode==='signal' ? '📥 信号清洗模式已激活：粘贴原始信息，agent 会清洗入库'
+      : window._activeMode==='signal' ? '📥 沉淀入库模式已激活：粘贴原始信息，agent 判类清洗后提交入库'
       : '已退出模式，恢复普通对话');
   }
   const dmBtn = $('#designModeBtn');
@@ -576,7 +578,7 @@ function newSession(){
     return;
   }
   // R40：进入草稿态（不真建session，发消息时才建）；重复点＋只保持一个草稿
-  if(window._activeMode){ const mn = window._activeMode==='design'?'设计模式':'信号清洗模式'; exitActiveMode({toast:`已退出${mn}（新建了会话）`}); }
+  if(window._activeMode){ const mn = window._activeMode==='design'?'设计模式':'沉淀入库模式'; exitActiveMode({toast:`已退出${mn}（新建了会话）`}); }
   saveDraftInput();               // 缓存当前对话未发送的输入
   activeSid = null;
   _draftMode = true;
@@ -592,7 +594,7 @@ function newSession(){
 
 // R40：从其它会话切回草稿卡
 function switchToDraft(){
-  if(window._activeMode){ const mn = window._activeMode==='design'?'设计模式':'信号清洗模式'; exitActiveMode({toast:`已退出${mn}（切换了会话）`}); }
+  if(window._activeMode){ const mn = window._activeMode==='design'?'设计模式':'沉淀入库模式'; exitActiveMode({toast:`已退出${mn}（切换了会话）`}); }
   saveDraftInput();
   activeSid = null;
   _draftMode = true;
@@ -611,7 +613,7 @@ async function switchSession(sid){
   if(sid === activeSid) return;
   // 切会话前若有激活的能力模式，自动退出并提示（模式属于"当前这轮对话流"，切走即结束，防误操作）
   if(window._activeMode){
-    const mn = window._activeMode==='design' ? '设计模式' : '信号清洗模式';
+    const mn = window._activeMode==='design' ? '设计模式' : '沉淀入库模式';
     exitActiveMode({toast: `已退出${mn}（切换了会话）`});
   }
   saveDraftInput();               // R39/R40：切走前缓存当前输入
