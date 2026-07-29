@@ -229,7 +229,7 @@ def _review_system_prompt(ref: dict) -> str:
 - **若这条申请适合沉淀为需求或需要跟进，请对照上面成员职责给出「建议负责人」并说明理由**（谁的职责域最匹配）。
 - **每当你的审核建议有更新（首轮必须），在回复末尾输出 ```proposal 代码块**：
 ```proposal
-{{"suggested_category": "signals/requirements/designs/decisions/projects(项目开档申请)", "duplicate_risk": "无/低/中/高", "duplicate_of": "疑似重复的条目id或空串", "quality_notes": "质量简评", "recommendation": "通过/建议修订后通过/建议驳回", "reason": "一句话理由", "suggested_owner": "建议负责人用户名或空串", "suggested_reject_reason": "若建议驳回,给出发给提交人的驳回理由,否则空串"}}
+{{"suggested_category": "signals/requirements/designs/decisions/projects(项目开档申请)", "duplicate_risk": "无/低/中/高", "duplicate_of": "疑似重复的条目id或空串", "quality_notes": "质量简评", "recommendation": "通过/建议修订后通过/建议驳回", "reason": "一句话理由", "suggested_owner": "建议负责人用户名或空串", "suggested_reject_reason": "若建议驳回,给出发给提交人的驳回理由,否则空串", "suggested_fields": {{"business_value": "从内容推导的业务价值(推导不出则省略该键)", "customer": "...", "target_release": "..."}}}}
 ```
 - proposal 块外用简洁中文回应管理员，不重复方案内容。
 - **驳回理由必须具体可操作**：`suggested_reject_reason` 不能只写"不符合标准"这类笼统结论，要指出**具体问题+怎么改**（如"缺少 urgency 字段，请补充紧急度"、"描述只有一句话，请补充问题背景和客户诉求"、"与 SIG-xxx 重复，请确认是否为同一件事"），让提交人看了知道下一步怎么做。"""
@@ -330,12 +330,42 @@ def _find_live_dialog(kind: str, ref: dict):
     return None, None
 
 
+def purge_dialog_by_ref(kind: str, ref: dict) -> int:
+    """按待审项标识清除对话（approve/reject 成功后由后端主动调用——
+    不依赖前端 setTimeout，保证审批完成后旧讨论不残留、不会串到下一轮同名提交）。"""
+    rk = _resume_key(kind, ref or {})
+    n = 0
+    with _LOCK:
+        for did in [k for k, v in _DIALOGS.items() if v.get('resume_key') == rk]:
+            _DIALOGS.pop(did, None)
+            n += 1
+    return n
+
+
 def start_dialog(kind: str, ref: dict) -> ApiResult:
     _gc()
     if kind not in ('merge', 'review', 'rules', 'skill'):
         return {'error': f'未知对话类型 {kind}'}, 400
     # 续接：同一待审项/技能已有存活对话 → 返回历史消息，接着聊（不重新分析）
     live_id, live = _find_live_dialog(kind, ref)
+    if live_id and live is not None and kind == 'review':
+        # 防串联：若待审文件在对话创建后被重新提交（驳回→修订→重提），旧讨论作废
+        try:
+            from api import review as _rv
+            inbox = _rv._user_inbox((ref or {}).get('user', ''))
+            if inbox:
+                mf = inbox / ((ref or {}).get('file', '') + '.meta.json')
+                if mf.exists():
+                    meta = json.loads(mf.read_text(encoding='utf-8'))
+                    sub_at = meta.get('submitted_at', '')
+                    if sub_at:
+                        sub_ts = time.mktime(time.strptime(sub_at, '%Y-%m-%d %H:%M:%S'))
+                        if sub_ts > live.get('created', live.get('touched', 0)):
+                            with _LOCK:
+                                _DIALOGS.pop(live_id, None)
+                            live_id, live = None, None
+        except Exception:
+            pass
     if live_id and live is not None:
         live['touched'] = time.time()
         msgs = [m for m in live.get('messages', []) if m['role'] in ('user', 'assistant')]
@@ -386,7 +416,8 @@ def start_dialog(kind: str, ref: dict) -> ApiResult:
     did = uuid.uuid4().hex[:12]
     with _LOCK:
         _DIALOGS[did] = {'kind': kind, 'ref': ref or {}, 'messages': messages,
-                         'resume_key': _resume_key(kind, ref or {}), 'touched': time.time()}
+                         'resume_key': _resume_key(kind, ref or {}),
+                         'created': time.time(), 'touched': time.time()}
     return {'dialog_id': did, 'reply': reply, 'proposal': proposal}
 
 

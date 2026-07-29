@@ -312,6 +312,7 @@ window.wbOpenReviewDialog = function(item){
         <div><b>建议归类：</b>${h(prop.suggested_category||'—')} · <b>重复风险：</b>${h(prop.duplicate_risk||'—')}${prop.duplicate_of?` (疑似与 ${h(prop.duplicate_of)} 重复)`:''}</div>
         <div><b>质量：</b>${h(prop.quality_notes||'—')}</div>
         ${prop.suggested_owner?`<div><b>建议负责人：</b><span style="color:var(--brand-strong);font-weight:700">${h(prop.suggested_owner)}</span>（按职责匹配）</div>`:''}
+        ${(prop.suggested_fields && Object.keys(prop.suggested_fields).length)?`<div><b>补全字段建议：</b>${Object.entries(prop.suggested_fields).map(([k,v])=>`${h(k)}=「${h(String(v))}」`).join('、')} <span style="color:var(--ink-3);font-size:11px">（入库时自动写入）</span></div>`:''}
         <div><b>AI 倾向：</b><span style="color:${recColor};font-weight:700">${h(prop.recommendation||'—')}</span> — ${h(prop.reason||'')}</div>
         <div style="display:flex;gap:8px;margin-top:8px">
           <button class="ad-exec btn sm primary" data-act="approve">✓ 入库</button>
@@ -322,11 +323,13 @@ window.wbOpenReviewDialog = function(item){
       const act = dlg.el && dlg.el.dataset.act;
       const adv = (prop.recommendation||'') + (prop.reason ? ('·'+prop.reason) : '');
       if(act === 'approve'){
-        // 采纳 AI 建议的归类（suggested_category），传给后端决定入库到哪个池；无建议则后端回落申报类目
+        // 采纳 AI 建议的归类（suggested_category）+ AI 推导的价值字段（suggested_fields，
+        // 完整度检查的落地：审核agent从内容推导出的 business_value 等直接随入库写入）
+        const sugFields = (prop.suggested_fields && typeof prop.suggested_fields==='object') ? prop.suggested_fields : {};
         const doApprove = (extra)=>api('/api/review/approve', {method:'POST', body:JSON.stringify({
           user: item._profile || item.profile, file: item.file,
           final_category: prop.suggested_category || undefined,
-          extra_fields: extra || undefined})});
+          extra_fields: Object.assign({}, sugFields, extra || {})})});
         let d;
         try{
           d = await doApprove();

@@ -148,6 +148,31 @@ raw_excerpt: 归并自 {len(sources)} 条信号
     return {'ok': True, 'new_id': new_id, 'merged_count': len(sources), 'git': git1}
 
 
+def _derive_business_value(sig: dict) -> str:
+    """信号转需求时用团队 LLM 从信号内容推导业务价值（一句话）。失败回落'待补充'。"""
+    fallback = '(待补充：从信号延伸的业务价值)'
+    try:
+        from api.merge_agent import _team_key_and_model, _llm_call
+        key, model, _ = _team_key_and_model()
+        if not key:
+            return fallback
+        material = (sig.get('description') or '') + '\n' + (sig.get('raw_excerpt') or sig.get('_body') or '')
+        if len(material.strip()) < 10:
+            return fallback
+        prompt = (f"信号标题：{sig.get('title','')}\n信号内容：{material[:600]}\n\n"
+                  "基于以上信号，用一句话（30字内）概括把它做成产品需求后的业务价值"
+                  "（解决什么痛点/省什么成本/带来什么收益）。只输出这一句话，不要任何前缀或解释。")
+        val = _llm_call(key, model, prompt, max_tokens=1200, title='WDP BizValue Derive').strip()
+        # 防御：过长/空/带markdown的都回落
+        val = val.strip('"\'` \n')
+        if 5 <= len(val) <= 60 and '\n' not in val:
+            return val
+        return fallback
+    except Exception as e:
+        logger.debug('derive business_value failed: %s', e)
+        return fallback
+
+
 # ── 信号沉淀为需求 ──────────────────────────────────────────────────────────
 def signal_to_requirement(signal_id: str, admin_user: str,
                           priority: str = 'P2', owner: str = '') -> ApiResult:
@@ -161,6 +186,7 @@ def signal_to_requirement(signal_id: str, admin_user: str,
 
     req_id = _next_id('requirements', 'REQ')
     today = time.strftime('%Y-%m-%d')
+    biz_value = _derive_business_value(sig)   # 智能预填：LLM 从信号推导业务价值（失败回落待补充）
     req_body = f"""---
 id: {req_id}
 type: 需求
@@ -173,7 +199,7 @@ source_signals: [{sig.get('id', '')}]
 related_module: {sig.get('related_module', '')}
 owner: {owner or '待分配'}
 customer: {sig.get('source_ref', '')}
-business_value: (待补充：从信号延伸的业务价值)
+business_value: {biz_value}
 effort_estimate: 待评估
 target_release: 待定
 tags: []

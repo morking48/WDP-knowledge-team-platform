@@ -256,6 +256,11 @@ def approve(profile: str, fname: str, final_name: str | None,
                                f'✅ 你的项目开档申请「{res.get("dir","")}」已通过，项目已建档', admin_user)
         except Exception:
             pass
+        try:
+            from api.agent_dialog import purge_dialog_by_ref
+            purge_dialog_by_ref('review', {'user': profile, 'file': fname})
+        except Exception:
+            pass
         return {'ok': True, 'category': 'projects', 'project': res.get('dir'),
                 'message': res.get('message', '项目已开档')}
 
@@ -357,6 +362,13 @@ def approve(profile: str, fname: str, final_name: str | None,
     except Exception as e:
         logger.debug('refresh_index after approve failed: %s', e)
 
+    # 审批完成 → 后端主动清除该待审项的协作对话（防旧讨论残留串到同名新提交）
+    try:
+        from api.agent_dialog import purge_dialog_by_ref
+        purge_dialog_by_ref('review', {'user': profile, 'file': fname})
+    except Exception:
+        pass
+
     return {'ok': True, 'final_path': f'{category}/{target_name}', 'git': git_msg}
 
 
@@ -390,6 +402,12 @@ def reject(profile: str, fname: str, reason: str, admin_user: str) -> ApiResult:
                                'system')
     except Exception as e:
         logger.warning("reject notify submitter failed: %s", e)
+    # 驳回完成 → 后端主动清除该待审项的协作对话（成员修订后重新提交=新一轮审核，不接旧讨论）
+    try:
+        from api.agent_dialog import purge_dialog_by_ref
+        purge_dialog_by_ref('review', {'user': profile, 'file': fname})
+    except Exception:
+        pass
     return {'ok': True}
 
 
