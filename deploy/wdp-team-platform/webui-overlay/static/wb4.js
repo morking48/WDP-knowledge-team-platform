@@ -91,14 +91,22 @@ async function runSmartMerge(){
   try{
     const d = await api('/api/admin/merge/analyze');
     const groups = d.groups || [];
+    const mis = d.miscategorized || [];
+    // 类目错放提示块（归并agent顺带检查出的"不该是信号"的条目）
+    const misHtml = mis.length ? `<div style="border:1px solid rgba(180,140,40,.35);border-radius:12px;padding:10px 14px;margin-bottom:10px;background:rgba(180,140,40,.07)">
+        <div style="font-weight:700;color:#9a6b1a;margin-bottom:6px">⚠ 疑似类目错放（${mis.length} 条）</div>
+        ${mis.map(m=>`<div style="font-size:12px;color:var(--ink-2);margin-bottom:4px">· <b>${h(m.signal_id)}</b> ${h(m.title||'')} → 建议改为 <b>${h(m.suggested_category)}</b>：${h(m.reason||'')}</div>`).join('')}
+        <div style="font-size:11px;color:var(--ink-3);margin-top:6px">处理方式：需求类可直接用信号卡片的「沉淀为需求」流转；设计/决策类可让 agent 重新提交到对应类目。</div>
+      </div>` : '';
     const body = card.querySelector('#smBody');
-    if(!groups.length){
+    if(!groups.length && !mis.length){
       body.innerHTML = `<div style="text-align:center;padding:24px;color:var(--ink-3)">✓ ${h(d.message||'没有发现可归并的信号')}</div>
         <div style="text-align:right"><button class="wbm-btn" id="smClose">知道了</button></div>`;
       body.querySelector('#smClose').onclick=()=>close();
       return;
     }
     body.innerHTML = `<div style="font-size:12px;color:var(--ink-3);margin-bottom:10px">${h(d.message||'')}（模型：${h(d.model||'')}）</div>`
+      + misHtml
       + (d.history_count?`<div style="font-size:11px;color:var(--brand-strong);margin-bottom:8px">🧠 已学习 ${d.history_count} 条团队历史归并决策，建议已贴合团队风格</div>`:
          `<div style="font-size:11px;color:var(--ink-3);margin-bottom:8px">💡 首次使用：执行归并后决策会被记录，AI 将逐步学习团队风格</div>`)
       + groups.map((g,i)=>`
@@ -396,6 +404,28 @@ window.wbDesignAction = async function(act, ds){
       toast('已关联需求 '+reqId);
       W.LOADED.board=false; if(window.wbRefreshRailCnt)window.wbRefreshRailCnt(); W.loadDesigns();
     }catch(e){ toast('关联失败：'+e.message, true); }
+  } else if(act === 'edit'){
+    // ✏️ 编辑设计字段：designer / target_release / doc_url（闭环补全：这些字段非必填，
+    // 提交时常没有，这里给 admin 事后补齐的入口，让卡片展示的字段真实有值）
+    const members = await getMemberOptions(false);
+    const form = await wbForm('编辑设计字段', [
+      {key:'designer', label:'设计人', type:'select', value:ds.designer||'', options:[{value:'',label:'（不改）'}, ...members]},
+      {key:'target_release', label:'目标版本（如 5.17）', type:'text', value:ds.release||'', placeholder:'留空=不改'},
+      {key:'doc_url', label:'设计资料链接（飞书/企微文档 URL）', type:'text', value:ds.docurl||'', placeholder:'留空=不改'},
+    ], {icon:'✏️', okText:'保存'});
+    if(!form) return;
+    const updates = {};
+    if(form.designer) updates.designer = form.designer;
+    if((form.target_release||'').trim()) updates.target_release = form.target_release.trim();
+    if((form.doc_url||'').trim()) updates.doc_url = form.doc_url.trim();
+    if(!Object.keys(updates).length){ toast('没有要更新的字段'); return; }
+    try{
+      await api('/api/admin/knowledge/update', {method:'POST', body:JSON.stringify({
+        type:'designs', id:ds.id, updates, note:'编辑字段 '+Object.keys(updates).join('/')
+      })});
+      toast('已更新 '+Object.keys(updates).join('、'));
+      W.LOADED.board=false; if(window.wbRefreshRailCnt)window.wbRefreshRailCnt(); W.loadDesigns();
+    }catch(e){ toast('更新失败：'+e.message, true); }
   } else if(act === 'review'){
     const members = await getMemberOptions(false);
     const form = await wbForm('指派评审', [
@@ -721,19 +751,27 @@ function bindTraceLinks(box){
   }));
 }
 
-window.wbLoadTraces = async function(type, id){
-  const box = document.querySelector(`#trace-${type}-${CSS.escape(id)} .sec-b`);
-  if(!box) return;
+window.wbLoadTraces = async function(type, id, row){
+  // row 传入时（设计卡片 .dsn-trace-row）直接写入其 span；否则回落旧的 #trace-x-x 容器
+  const span = row ? row.querySelector('span:last-child')
+                   : document.querySelector(`#trace-${type}-${CSS.escape(id)} .sec-b`);
+  if(!span) return;
   try{
     const d = await api(`/api/knowledge/traces?type=${type}&id=${encodeURIComponent(id)}`);
     const up = d.upstream||[], down = d.downstream||[];
-    if(!up.length && !down.length){ box.innerHTML = '<span style="color:var(--ink-3)">暂无关联</span>'; return; }
+    if(!up.length && !down.length){ span.innerHTML = '<span style="color:var(--ink-3);font-size:11px">暂无关联</span>'; return; }
     let html = '';
-    if(up.length) html += `<div style="margin-bottom:4px"><span style="color:var(--ink-3);font-size:11px">⬆ 上游：</span>${up.map(traceLink).join('')}</div>`;
-    if(down.length) html += `<div><span style="color:var(--ink-3);font-size:11px">⬇ 下游：</span>${down.map(traceLink).join('')}</div>`;
-    box.innerHTML = html;
-    bindTraceLinks(box);
-  }catch(e){ box.innerHTML = '<span style="color:var(--danger)">追溯加载失败</span>'; }
+    if(row){
+      // 紧凑单行样式（与需求追溯对齐）
+      if(up.length) html += '⬆ '+up.map(traceLink).join('');
+      if(down.length) html += (up.length?' ':'')+'⬇ '+down.map(traceLink).join('');
+    }else{
+      if(up.length) html += `<div style="margin-bottom:4px"><span style="color:var(--ink-3);font-size:11px">⬆ 上游：</span>${up.map(traceLink).join('')}</div>`;
+      if(down.length) html += `<div><span style="color:var(--ink-3);font-size:11px">⬇ 下游：</span>${down.map(traceLink).join('')}</div>`;
+    }
+    span.innerHTML = html;
+    bindTraceLinks(span);
+  }catch(e){ span.innerHTML = '<span style="color:var(--danger);font-size:11px">追溯加载失败</span>'; }
 };
 
 window.wbLoadReqTrace = async function(reqId, row){

@@ -116,15 +116,31 @@ def save_merge_rule(content: str) -> ApiResult:
         return {'error': str(e)}, 500
 
 
+# ── 类目判别标准（单一数据源：审核/对话/归并 agent 共享注入）──────────────
+CATEGORY_GUIDE = """## 类目判别标准（判类看内容本质，不看提交人怎么标）
+- **signals 信号** = 一手**事实/线索**：客户说了什么、会上定了什么、竞品做了什么、现场发现了什么。还停留在"发生了什么"，没变成"我们要做什么"。
+- **requirements 需求** = 明确的**诉求/待办**：要做什么功能、解决什么问题、为谁做，有"做完"的概念（可验收）。能回答"做什么+为什么做"。
+- **designs 设计** = **方案/文档**：怎么做——功能设计、交互方案、数据契约、技术方案、设计资料（含挂文档链接的设计材料）。回答"怎么做"。
+- **decisions 决策** = 已拍板的**结论/口径**：某个争议或选择的最终定论（谁定的、依据什么）。
+- **projects 项目** = 给具体**客户项目立项建档**：有客户名/商机号/交付节点的开档申请（不是泛泛的产品功能）。
+
+判别口诀：**事实→信号，诉求→需求，方案→设计，定论→决策，立项→项目**。
+- 一条内容混含多类时按**主体内容**判类，并提示"可拆分"（如信号里带明确诉求→主体是事实就归信号、提示可再沉淀需求）。
+- 拿不准时倾向 signals（信号是入口层，后续可流转），但要说明拿不准的原因。"""
+
 # ── 审核规则（审核助手的调教规则，与归并规则平级）──────────────────
-_DEFAULT_REVIEW_RULE = """你是 WDP 产品团队知识库的审核助手，协助管理员审核成员提交的入库申请。
+_DEFAULT_REVIEW_RULE = f"""你是 WDP 产品团队知识库的审核助手，协助管理员审核成员提交的入库申请。
 
 审核原则：
 - 质量：内容是否具体、有事实依据，避免空泛描述；必填字段是否完整。
 - 查重：与现有知识库条目对比，主题重复的标记重复风险并指出疑似条目。
-- 归类：判断申请归入 signals/requirements/designs/decisions/projects 哪个类目最合适（projects=项目开档申请：内容是给某个售前/售后项目立项建档）。
+- **归类（核心职责）：独立判断该内容本质上属于哪个类目，申报类目仅供参考、不构成依据。**
+  按下面的判别标准判类；若你的判断与申报类目不一致，必须在回复里显式指出：
+  "申报为 X，建议改为 Y，理由：…"（proposal 的 suggested_category 填你判断的类目）。
 - 分配：适合跟进的申请，按成员职责给出建议负责人。
-- 建议驳回时给出具体、可改进的理由（发给提交人）。"""
+- 建议驳回时给出具体、可改进的理由（发给提交人）。
+
+{CATEGORY_GUIDE}"""
 
 
 def _review_rule_path() -> Path:
@@ -135,7 +151,11 @@ def get_review_rule() -> str:
     p = _review_rule_path()
     if p.is_file():
         try:
-            return p.read_text(encoding='utf-8')
+            custom = p.read_text(encoding='utf-8')
+            # 类目判别标准是结构性规训，自定义规则里没写也强制附加（防 admin 编辑规则时丢失）
+            if '类目判别标准' not in custom:
+                custom = custom.rstrip() + '\n\n' + CATEGORY_GUIDE
+            return custom
         except Exception:
             pass
     return _DEFAULT_REVIEW_RULE
@@ -229,15 +249,23 @@ def analyze_merge(admin_user: str = 'admin') -> ApiResult:
         hist_count = 0
     prompt = f"""{rule}
 {history}
+{CATEGORY_GUIDE}
+
 以下信号已按【模块+类别】分桶（归并只能在同一桶内发生，不同桶的信号不要合并）：
 {json.dumps(bucketed, ensure_ascii=False, indent=2)}
 
-请在每个桶内部找出「主题相同、应合并成一条」的信号组。只返回 JSON：
+请做两件事：
+1. 在每个桶内部找出「主题相同、应合并成一条」的信号组。
+2. 顺带检查类目错放：按上面的判别标准，若某条"信号"本质上是需求/设计/决策（如已是明确诉求待办、或已是方案文档），列入 miscategorized。
+
+只返回 JSON：
 {{"groups": [{{"signal_ids": ["SIG-x","SIG-y"], "suggested_title": "归并后标题",
   "suggested_body": "归并后新信号的完整描述（150字内：综合各源信号的问题本质、影响面、客户诉求）",
   "suggested_urgency": "高/中/低（取组内最高）",
-  "reason": "归并理由"}}]}}
-规则：①只合并同一桶内的信号，signal_ids 必须来自上面清单里真实存在的 id ②每组至少 2 条 ③没有可归并的组返回 {{"groups": []}}。不要输出 JSON 以外的任何文字。"""
+  "reason": "归并理由"}}],
+ "miscategorized": [{{"signal_id": "SIG-x", "suggested_category": "requirements/designs/decisions",
+  "reason": "为什么它不是信号（一句话）"}}]}}
+规则：①只合并同一桶内的信号，signal_ids 必须来自上面清单里真实存在的 id ②每组至少 2 条 ③没有可归并的组返回 {{"groups": []}}，没有错放返回 {{"miscategorized": []}}。不要输出 JSON 以外的任何文字。"""
 
     try:
         content = _llm_call(key, model, prompt, max_tokens=4000, title='WDP Merge Agent')
@@ -276,7 +304,16 @@ def analyze_merge(admin_user: str = 'admin') -> ApiResult:
             msg += f'（已过滤 {dropped} 组无效建议）'
         if hist_count:
             msg += f'，参考了 {hist_count} 条团队历史决策'
-        return {'ok': True, 'groups': groups, 'model': model,
+        # 类目错放建议：只保留真实存在的信号 id（防幻觉）
+        mis = []
+        for m in (parsed.get('miscategorized') or []):
+            sid = m.get('signal_id', '')
+            if sid in valid_ids and m.get('suggested_category') in ('requirements', 'designs', 'decisions', 'projects'):
+                m['title'] = by_id.get(sid, {}).get('title', sid)
+                mis.append(m)
+        if mis:
+            msg += f'；⚠ 发现 {len(mis)} 条疑似类目错放（详见建议）'
+        return {'ok': True, 'groups': groups, 'model': model, 'miscategorized': mis,
                 'analyzed': len(signals), 'history_count': hist_count, 'message': msg}
     except Exception as e:
         logger.warning('analyze_merge LLM failed: %s', e)

@@ -8,6 +8,8 @@ requirement_id: REQ-YYYYMMDD-NNN   # 关联的需求ID
 status: 草稿|评审中|已定稿|已交付研发|已废弃
 designer: <设计师/产品负责人>
 target_release: <目标版本>
+doc_url:                            # 设计资料链接（飞书/企微文档 URL，可空，卡片上直接可点）
+tracking: []                        # 生命周期留痕（改状态/关联需求时后端自动追加，勿手填）
 ---
 
 ## 设计目标

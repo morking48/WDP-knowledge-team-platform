@@ -33,9 +33,9 @@ window.wbAgentDialog = function(opts){
       <span style="font-size:19px">${opts.icon||'🤖'}</span>
       <div style="flex:1">
         <div style="font-weight:700;font-size:15px">${h(opts.title||'Agent 协作')}</div>
-        <div style="font-size:11px;color:var(--ink-3)">对话式协作 · 你的意见会实时影响 agent 的方案 · 关闭即清除本次对话</div>
+        <div style="font-size:11px;color:var(--ink-3)">对话式协作 · 关闭后再打开会接续本次讨论 · 入库/驳回完成后自动结束</div>
       </div>
-      <button class="ad-close" style="border:none;background:rgba(0,0,0,.05);width:30px;height:30px;border-radius:9px;cursor:pointer;font-size:15px;color:var(--ink-2)" title="关闭并清除对话">✕</button>
+      <button class="ad-close" style="border:none;background:rgba(0,0,0,.05);width:30px;height:30px;border-radius:9px;cursor:pointer;font-size:15px;color:var(--ink-2)" title="关闭（对话保留，可再打开续接）">✕</button>
     </div>
     <div class="ad-msgs" style="flex:1;overflow-y:auto;padding:16px 18px;display:flex;flex-direction:column;gap:12px"></div>
     <div class="ad-prop" style="flex-shrink:0;display:none;border-top:1px solid var(--line-2);padding:10px 18px;background:rgba(22,163,74,.05);max-height:320px;overflow-y:auto"></div>
@@ -67,6 +67,15 @@ window.wbAgentDialog = function(opts){
   }
   function mdLite(t){
     return h(t).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/\n/g,'<br>');
+  }
+  // 从 assistant 原文里分离出正文和 proposal 块（续接渲染历史用）
+  function splitProposal(raw){
+    const s = String(raw||'');
+    const m = s.match(/```proposal\s*([\s\S]*?)```/);
+    let proposal = null;
+    if(m){ try{ proposal = JSON.parse(m[1].trim()); }catch(_){} }
+    const reply = s.replace(/```proposal[\s\S]*?```/g,'').trim();
+    return {reply, proposal};
   }
   function setBusy(b){
     busy = b;
@@ -106,8 +115,18 @@ window.wbAgentDialog = function(opts){
       const d = await api('/api/admin/agent-dialog/start', {method:'POST', body:JSON.stringify({kind:opts.kind, ref:opts.ref||{}})});
       dialogId = d.dialog_id;
       msgsBox.lastChild.remove();
-      addMsg('agent', mdLite(d.reply||'(无回复)'));
-      showProposal(d.proposal);
+      if(d.resumed){
+        // 续接已有对话：渲染历史消息，接着上次聊（缺字段失败/关窗重开都不丢）
+        addMsg('sys','↩ 已恢复上次的审核对话（可接着讨论或直接执行）');
+        (d.history||[]).forEach(m=>{
+          if(m.role==='user') addMsg('user', m.content);
+          else if(m.role==='assistant'){ const {reply}=splitProposal(m.content); addMsg('agent', mdLite(reply||'(无回复)')); }
+        });
+        showProposal(d.proposal);
+      }else{
+        addMsg('agent', mdLite(d.reply||'(无回复)'));
+        showProposal(d.proposal);
+      }
     }catch(e){
       msgsBox.lastChild.remove();
       addMsg('sys', `<span style="color:var(--danger)">启动失败：${h(e.message)} </span>`);
@@ -135,8 +154,10 @@ window.wbAgentDialog = function(opts){
     setBusy(false);
     input.focus();
   }
-  function close(){
-    if(dialogId){ api('/api/admin/agent-dialog/close', {method:'POST', body:JSON.stringify({dialog_id:dialogId})}).catch(()=>{}); }
+  // close(purge): purge=true 才清后端对话（入库/驳回完成时）；
+  // 默认关窗只移除 UI，后端对话保留 → 同一待审项再打开可续接
+  function close(purge){
+    if(purge && dialogId){ api('/api/admin/agent-dialog/close', {method:'POST', body:JSON.stringify({dialog_id:dialogId})}).catch(()=>{}); }
     overlay.remove();
   }
   card.querySelector('.ad-close').onclick = ()=>close();
@@ -207,9 +228,17 @@ window.wbOpenReviewDialog = function(item){
       const adv = (prop.recommendation||'') + (prop.reason ? ('·'+prop.reason) : '');
       if(act === 'approve'){
         // 采纳 AI 建议的归类（suggested_category），传给后端决定入库到哪个池；无建议则后端回落申报类目
-        const d = await api('/api/review/approve', {method:'POST', body:JSON.stringify({
-          user: item._profile || item.profile, file: item.file,
-          final_category: prop.suggested_category || undefined})});
+        let d;
+        try{
+          d = await api('/api/review/approve', {method:'POST', body:JSON.stringify({
+            user: item._profile || item.profile, file: item.file,
+            final_category: prop.suggested_category || undefined})});
+        }catch(err){
+          // 缺字段等入库失败：明确提示缺什么，对话保留可继续（不必关窗重来）
+          const miss = (err.data && err.data.missing) ? '：缺 '+err.data.missing.join('、') : '';
+          dlg.addSys(`<span style="color:var(--danger)">⚠ 入库未通过${miss}。请让提交人补全字段后重新提交，或和我继续讨论——本对话已保留，无需重开。</span>`);
+          throw err;   // 抛给外层，恢复按钮可点
+        }
         api('/api/admin/team-agent/record-decision', {method:'POST', body:JSON.stringify({
           kind:'review', entry:{title:item.title, category:item.category, decision:'通过', ai_advice:adv, reason:'', via:'dialog'}})}).catch(()=>{});
         // L4 稳态：git commit 结果显式回报（失败=有文件无版本记录，必须让管理员知道）
@@ -240,6 +269,8 @@ window.wbOpenReviewDialog = function(item){
       dlg.el.disabled = true;
       if(window.loadReview) window.loadReview();
       if(window.wbRefreshRailCnt) window.wbRefreshRailCnt();
+      // 审批完成（入库/驳回成功）→ 清除后端对话（该待审项已处理，无需再续接）
+      if(dlg.close) dlg.close(true);
     }
   });
 };

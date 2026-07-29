@@ -185,8 +185,13 @@ def get_pending_item(profile: str, fname: str) -> dict | None:
 
 # ── 通过入库（admin）───────────────────────────────────────────────────────
 def approve(profile: str, fname: str, final_name: str | None,
-            final_category: str | None, admin_note: str, admin_user: str) -> ApiResult:
-    """通过：移文件到 knowledge/<cat>/<final_name>.md，git commit，inbox 归档。"""
+            final_category: str | None, admin_note: str, admin_user: str,
+            extra_fields: dict | None = None) -> ApiResult:
+    """通过：移文件到 knowledge/<cat>/<final_name>.md，git commit，inbox 归档。
+
+    extra_fields: 审核时补充的 frontmatter 字段（如设计的 designer/target_release），
+    写入前合并进内容——审核是补齐字段的最后闸口。
+    """
     item = get_pending_item(profile, fname)
     if not item:
         return {'error': '待审项不存在'}, 404
@@ -253,6 +258,27 @@ def approve(profile: str, fname: str, final_name: str | None,
             pass
         return {'ok': True, 'category': 'projects', 'project': res.get('dir'),
                 'message': res.get('message', '项目已开档')}
+
+    # 审核补充字段：合并进 frontmatter（放模板校验前，补的字段也参与校验）
+    if extra_fields:
+        try:
+            import re as _re
+            m = _re.match(r'^(---\s*\n)(.*?)(\n---)', content, _re.DOTALL)
+            if m:
+                fm_text = m.group(2)
+                for k, v in extra_fields.items():
+                    if not v or not str(k).strip():
+                        continue
+                    k = str(k).strip()
+                    # 已有该字段则替换值，没有则追加
+                    pat = _re.compile(r'^' + _re.escape(k) + r':.*$', _re.MULTILINE)
+                    if pat.search(fm_text):
+                        fm_text = pat.sub(f'{k}: {v}', fm_text)
+                    else:
+                        fm_text = fm_text + f'\n{k}: {v}'
+                content = m.group(1) + fm_text + m.group(3) + content[m.end():]
+        except Exception as e:
+            logger.warning('merge extra_fields failed: %s', e)
 
     # 模板校验（触点2：管理员审核入库时，二次守门）
     vr = _kb.validate_against_template(category, content)
@@ -422,9 +448,13 @@ def handle_review_approve(handler, body):
     final_name = (body.get('final_name') or '').strip() or None
     final_category = (body.get('final_category') or '').strip() or None
     note = (body.get('note') or '').strip()
+    extra = body.get('extra_fields') or {}
+    if not isinstance(extra, dict):
+        extra = {}
     if not profile or not fname:
         return {'error': '缺参数'}, 400
-    return approve(profile, fname, final_name, final_category, note, u['username'])
+    return approve(profile, fname, final_name, final_category, note, u['username'],
+                   extra_fields=extra)
 
 
 def handle_review_reject(handler, body):

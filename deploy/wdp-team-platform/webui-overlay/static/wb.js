@@ -324,6 +324,7 @@ async function toggleSignalDetail(row){
         const it = d.item || {};
         box.dataset.loading = '0';
         box.innerHTML = `
+          ${it.description ? `<div class="sec"><div class="sec-t">📌 摘要</div><div class="sec-b">${h(it.description)}</div></div>` : ''}
           <div class="sec"><div class="sec-t">📄 信号内容</div><div class="sec-b">${bodyHtml(it._body||'')}</div></div>
           <div class="sec"><div class="sec-t">🔑 关键信息</div><div class="kv">
             <div><div class="k">信号编号</div><div class="v">${h(it.id||'—')}</div></div>
@@ -508,13 +509,14 @@ async function loadDesigns(){
         ${IS_ADMIN ? `<td><div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:center">
           <button class="btn sm ghost" data-dsn-act="status" data-id="${h(idv)}" data-status="${h(st)}">改状态</button>
           <button class="btn sm ghost" data-dsn-act="link" data-id="${h(idv)}" data-req="${h(x.requirement_id||'')}">关联需求</button>
+          <button class="btn sm ghost" data-dsn-act="edit" data-id="${h(idv)}" data-designer="${h(x.designer||'')}" data-release="${h(x.target_release||'')}" data-docurl="${h(x.doc_url||'')}">✏️ 编辑</button>
           <button class="btn sm ghost" data-dsn-act="review" data-id="${h(idv)}" data-title="${h(x.title||'')}">指派评审</button>
           <button class="btn sm ghost" data-dsn-act="delete" data-id="${h(idv)}" data-title="${h(x.title||'')}" style="color:var(--danger);border-color:var(--danger)">🗑</button>
         </div></td>` : ''}</tr>
       <tr class="exp-detail" data-id="${h(idv)}"><td colspan="${IS_ADMIN?7:6}"><div class="detail-box">
         <div class="row"><span class="k">设计人</span><span>${h(x.designer||'—')}</span></div>
         <div class="row"><span class="k">目标版本</span><span>${h(x.target_release||'—')}</span></div>
-        <div class="row"><span class="k">📄 设计资料</span><span>${x.doc_url?`<a href="${h(x.doc_url)}" target="_blank" style="color:var(--brand-strong)">${h(x.doc_url)}</a>`:`<span style="color:var(--ink-3);font-size:12px">未挂设计文档 · 可在对话中让 agent 提交设计资料（文档链接/原始文件），或让管理员编辑本设计的 doc_url 字段</span>`}</span></div>
+        <div class="row"><span class="k">📄 设计资料</span><span>${x.doc_url?`<a href="${h(x.doc_url)}" target="_blank" style="color:var(--brand-strong)">${h(x.doc_url)}</a>`:`<span style="color:var(--ink-3);font-size:12px">未挂设计文档 · 点上方「✏️ 编辑」填入文档链接，或在对话中让 agent 提交设计资料</span>`}</span></div>
         <div class="row"><span class="k">原始文件</span><span style="color:var(--ink-3);font-size:12px">${h(x._file||'—')}（knowledge/designs/）</span></div>
         <div class="row dsn-trace-row" data-dsn="${h(idv)}"><span class="k">🔗 追溯</span><span style="color:var(--ink-3);font-size:11px">展开时加载…</span></div>
       </div></td></tr>`;
@@ -543,7 +545,7 @@ function toast(msg, isErr){
   let el = $('#wbToast');
   if(!el){ el = document.createElement('div'); el.id='wbToast'; document.body.appendChild(el); }
   el.textContent = msg;
-  el.style.cssText = `position:fixed;bottom:28px;left:50%;transform:translateX(-50%);z-index:300;padding:12px 22px;border-radius:14px;font-size:13px;font-weight:600;color:#fff;box-shadow:0 8px 30px rgba(0,0,0,.2);background:${isErr?'#dc2626':'linear-gradient(145deg,#22c55e,#16a34a)'}`;
+  el.style.cssText = `position:fixed;bottom:28px;left:50%;transform:translateX(-50%);z-index:3100;padding:12px 22px;border-radius:14px;font-size:13px;font-weight:600;color:#fff;box-shadow:0 8px 30px rgba(0,0,0,.2);background:${isErr?'#dc2626':'linear-gradient(145deg,#22c55e,#16a34a)'}`;
   el.style.display = 'block';
   clearTimeout(_toastT);
   _toastT = setTimeout(()=>{ el.style.display='none'; }, 2600);

@@ -116,13 +116,19 @@ async function doApprove(){
   const form = await wbForm('通过入库', [
     {key:'category', label:'归类到哪个池', type:'select', value:defCat, options:catOpts},
     {key:'final_name', label:'最终文件名（.md 结尾）', type:'text', value: sug.suggested_name || _rvSel.file, required:true},
+    {key:'designer', label:'设计人（仅归类为设计时生效，可空）', type:'text', value:'', placeholder:'如：张三'},
+    {key:'target_release', label:'目标版本（仅设计/需求生效，可空）', type:'text', value:'', placeholder:'如：5.17'},
     {key:'note', label:'审核备注（可选）', type:'textarea', value:''},
   ], {icon:'📥', okText:'通过入库'});
   if(!form) return;
   if(!form.final_name){ toast('文件名必填', true); return; }
   try{
+    const extra = {};
+    if((form.designer||'').trim()) extra.designer = form.designer.trim();
+    if((form.target_release||'').trim()) extra.target_release = form.target_release.trim();
     const d = await api('/api/review/approve', {method:'POST', body:JSON.stringify({
-      user:_rvSel._profile, file:_rvSel.file, final_name:form.final_name, final_category:form.category, note:form.note||''
+      user:_rvSel._profile, file:_rvSel.file, final_name:form.final_name, final_category:form.category, note:form.note||'',
+      extra_fields: extra
     })});
     toast('已入库到 '+(d.final_path||''));
     // 记录审核决策供 few-shot 学习（基础入口无 AI 分析，ai_advice 留空；对话版审核才带 AI 建议）

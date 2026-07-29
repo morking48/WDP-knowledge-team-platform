@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 _DIALOGS: dict = {}
 _LOCK = threading.Lock()
 _MAX_TURNS = 24          # 每个对话最多保留的消息数（防膨胀）
-_TTL = 3600              # 1小时无操作自动过期
+_TTL = 86400             # 24小时无操作自动过期（兜底防泄漏；主清理靠入库/驳回后主动 close）
 
 
 def _gc():
@@ -225,6 +225,7 @@ def _review_system_prompt(ref: dict) -> str:
 
 ## 对话规则（重要）
 - 管理员会和你讨论这条申请（质量如何/是否重复/该归哪类/要不要驳回/该派给谁），你的分析要具体、基于内容。
+- **归类是你的核心判断（不要照抄申报类目）**：按团队规则里的类目判别标准，独立判断内容本质属于哪类；与申报类目不一致时，首轮回复就要显式指出"申报为 X，我判断应为 Y，理由：…"。
 - **若这条申请适合沉淀为需求或需要跟进，请对照上面成员职责给出「建议负责人」并说明理由**（谁的职责域最匹配）。
 - **每当你的审核建议有更新（首轮必须），在回复末尾输出 ```proposal 代码块**：
 ```proposal
@@ -307,10 +308,45 @@ def _skill_system_prompt(ref: dict) -> str:
 
 # ── 接口实现 ────────────────────────────────────────────────────────────────
 
+def _resume_key(kind: str, ref: dict) -> str:
+    """审批期对话的稳定标识：同一待审项/技能重开窗口能接续上次对话。
+    review 绑 profile+file；skill 绑 skill_dir；merge/rules 是全局单例。
+    """
+    ref = ref or {}
+    if kind == 'review':
+        return f"review:{ref.get('user','')}:{ref.get('file','')}"
+    if kind == 'skill':
+        return f"skill:{ref.get('skill_dir','')}"
+    return kind  # merge / rules：全局一个
+
+
+def _find_live_dialog(kind: str, ref: dict):
+    """查同一 resume_key 下未过期的对话，返回 (dialog_id, dialog) 或 (None, None)。"""
+    rk = _resume_key(kind, ref)
+    with _LOCK:
+        for did, d in _DIALOGS.items():
+            if d.get('resume_key') == rk:
+                return did, d
+    return None, None
+
+
 def start_dialog(kind: str, ref: dict) -> ApiResult:
     _gc()
     if kind not in ('merge', 'review', 'rules', 'skill'):
         return {'error': f'未知对话类型 {kind}'}, 400
+    # 续接：同一待审项/技能已有存活对话 → 返回历史消息，接着聊（不重新分析）
+    live_id, live = _find_live_dialog(kind, ref)
+    if live_id and live is not None:
+        live['touched'] = time.time()
+        msgs = [m for m in live.get('messages', []) if m['role'] in ('user', 'assistant')]
+        # 提取最后一条 assistant 的 proposal 供前端恢复动作区
+        last_proposal = None
+        for m in reversed(live.get('messages', [])):
+            if m['role'] == 'assistant':
+                _, last_proposal = _extract_proposal(m['content'])
+                break
+        return {'dialog_id': live_id, 'resumed': True, 'history': msgs,
+                'proposal': last_proposal}
     try:
         if kind == 'merge':
             sys_prompt = _merge_system_prompt()
@@ -350,7 +386,7 @@ def start_dialog(kind: str, ref: dict) -> ApiResult:
     did = uuid.uuid4().hex[:12]
     with _LOCK:
         _DIALOGS[did] = {'kind': kind, 'ref': ref or {}, 'messages': messages,
-                         'touched': time.time()}
+                         'resume_key': _resume_key(kind, ref or {}), 'touched': time.time()}
     return {'dialog_id': did, 'reply': reply, 'proposal': proposal}
 
 
