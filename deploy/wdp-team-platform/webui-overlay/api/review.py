@@ -183,6 +183,108 @@ def get_pending_item(profile: str, fname: str) -> dict | None:
     return {'content': content, 'meta': meta}
 
 
+# ── 合并更新（迭代场景：提交内容是已有条目的进展，追加进目标条目而非新建）──
+def merge_update(profile: str, fname: str, merge_into: str, merge_note: str,
+                 suggested_status: str, admin_user: str) -> ApiResult:
+    """把待审提交作为进展合并进已有条目：
+    - 目标条目 tracking 段追加进展记录（附源提交摘要）
+    - suggested_status 非空则联动改目标条目状态
+    - 源提交归档（同 approve），git commit
+    """
+    item = get_pending_item(profile, fname)
+    if not item:
+        return {'error': '待审项不存在'}, 404
+    if not merge_into:
+        return {'error': '缺合并目标条目 id'}, 400
+    # 找目标条目（跨类目找）
+    target_cat, target = None, None
+    for cat in ('signals', 'requirements', 'designs', 'decisions'):
+        t = _kb.get_item(cat, merge_into)
+        if t:
+            target_cat, target = cat, t
+            break
+    if not target:
+        return {'error': f'目标条目 {merge_into} 不存在'}, 404
+
+    meta = item.get('meta') or {}
+    content = item.get('content') or ''
+    today = time.strftime('%Y-%m-%d')
+    note = (merge_note or '').strip() or f"合并自提交「{meta.get('title', fname)}」"
+
+    # 1) 目标条目更新：frontmatter（状态联动 + tracking 追加）+ 正文追加进展段
+    root = _kb.get_knowledge_root()
+    if not root:
+        return {'error': 'knowledge 根不可用'}, 500
+    tfile = target.get('_file')
+    tpath = root / _kb.get_categories().get(target_cat, target_cat) / (tfile or '')
+    if not tfile or not tpath.exists():
+        return {'error': f'目标文件不存在 {tfile}'}, 404
+    try:
+        text = tpath.read_text(encoding='utf-8')
+        # 状态联动：替换 frontmatter 的 status 行
+        if suggested_status and suggested_status != target.get('status'):
+            text = re.sub(r'^status:.*$', f'status: {suggested_status}', text, count=1, flags=re.MULTILINE)
+        # tracking 追加（frontmatter 里有 tracking: 段则在其下插一条；没有就跳过，进展进正文）
+        track_line = (f"  - date: {today}\n    event: 进展合并\n"
+                      f"    note: {note}（提交人 {meta.get('username','')}，审核 {admin_user}）")
+        if re.search(r'^tracking:\s*$', text, flags=re.MULTILINE):
+            text = re.sub(r'^(tracking:\s*)$', r'\1\n' + track_line, text, count=1, flags=re.MULTILINE)
+        elif re.search(r'^tracking:\s*\[\]\s*$', text, flags=re.MULTILINE):
+            text = re.sub(r'^tracking:\s*\[\]\s*$', 'tracking:\n' + track_line, text, count=1, flags=re.MULTILINE)
+        # 正文追加进展段（保留源提交摘录，可追溯）
+        excerpt = content[:300].strip().replace('\r', '')
+        text += (f"\n\n## 进展记录 {today}\n{note}\n\n"
+                 f"> 来源：{meta.get('username','')} 提交「{meta.get('title','')}」（审核合并）\n")
+        tpath.write_text(text, encoding='utf-8')
+        # git 提交
+        subprocess.run(['git', '-C', str(root), 'add', str(tpath.relative_to(root))],
+                       capture_output=True, text=True, timeout=10)
+        subprocess.run(['git', '-C', str(root), 'commit', '-m',
+                        f'chore({target_cat}): {merge_into} 合并进展更新（审核 {admin_user}）'],
+                       capture_output=True, text=True, timeout=10)
+    except Exception as e:
+        return {'error': f'目标条目更新失败: {e}'}, 500
+
+    # 3) 源提交归档（同 approve 流程）
+    try:
+        inbox = _user_inbox(profile)
+        if inbox is not None:
+            archive = inbox.parent / ARCHIVE_DIRNAME / time.strftime('%Y%m%d-%H%M%S')
+            archive.mkdir(parents=True, exist_ok=True)
+            fpath = inbox / fname
+            if fpath.exists():
+                fpath.rename(archive / fname)
+            mf = inbox / (fname + '.meta.json')
+            if mf.exists():
+                meta['status'] = 'merged'
+                meta['resolved_at'] = time.strftime('%Y-%m-%d %H:%M:%S')
+                meta['resolved_by'] = admin_user
+                meta['merged_into'] = merge_into
+                (archive / (fname + '.meta.json')).write_text(
+                    json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
+                mf.unlink(missing_ok=True)
+    except Exception as e:
+        logger.warning('merge_update archive failed: %s', e)
+
+    # 4) 通知提交人 + 清协作对话
+    try:
+        from api import knowledge_ops as _ops
+        if meta.get('username'):
+            _ops.notify_member(meta['username'],
+                               f'⤵ 你的提交「{meta.get("title","")}」已作为进展合并进 {merge_into}'
+                               + (f'，状态更新为「{suggested_status}」' if suggested_status else ''),
+                               admin_user)
+    except Exception:
+        pass
+    try:
+        from api.agent_dialog import purge_dialog_by_ref
+        purge_dialog_by_ref('review', {'user': profile, 'file': fname})
+    except Exception:
+        pass
+    return {'ok': True, 'merged_into': merge_into, 'target_category': target_cat,
+            'status_changed': suggested_status or ''}
+
+
 # ── 通过入库（admin）───────────────────────────────────────────────────────
 def approve(profile: str, fname: str, final_name: str | None,
             final_category: str | None, admin_note: str, admin_user: str,

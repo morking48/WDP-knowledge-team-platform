@@ -5965,6 +5965,21 @@ def handle_post(handler, parsed) -> bool:
             return j(handler, b, status=code)
         return j(handler, res)
 
+    if parsed.path == "/api/review/merge-update":
+        from api import review as _rv2
+        from api import users as _users
+        u = _users.current_request_user(handler)
+        if not u or u.get('role') != 'admin':
+            return j(handler, {"error": "需要管理员权限"}, status=403)
+        res = _rv2.merge_update(
+            (body.get("user") or '').strip(), (body.get("file") or '').strip(),
+            (body.get("merge_into") or '').strip(), (body.get("merge_note") or '').strip(),
+            (body.get("suggested_status") or '').strip(), u['username'])
+        if isinstance(res, tuple):
+            b, code = res
+            return j(handler, b, status=code)
+        return j(handler, res)
+
     if parsed.path == "/api/review/approve":
         from api import review as _rv
         from api import users as _users

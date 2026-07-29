@@ -313,15 +313,35 @@ window.wbOpenReviewDialog = function(item){
         <div><b>质量：</b>${h(prop.quality_notes||'—')}</div>
         ${prop.suggested_owner?`<div><b>建议负责人：</b><span style="color:var(--brand-strong);font-weight:700">${h(prop.suggested_owner)}</span>（按职责匹配）</div>`:''}
         ${(prop.suggested_fields && Object.keys(prop.suggested_fields).length)?`<div><b>补全字段建议：</b>${Object.entries(prop.suggested_fields).map(([k,v])=>`${h(k)}=「${h(String(v))}」`).join('、')} <span style="color:var(--ink-3);font-size:11px">（入库时自动写入）</span></div>`:''}
+        ${prop.merge_into?`<div style="background:rgba(180,140,40,.08);border-radius:8px;padding:6px 10px;margin-top:4px"><b>⤵ 迭代识别：</b>建议合并进 <b>${h(prop.merge_into)}</b>${prop.merge_note?`，增量：${h(prop.merge_note)}`:''}${prop.suggested_status?`，状态→<b>${h(prop.suggested_status)}</b>`:''}</div>`:''}
         <div><b>AI 倾向：</b><span style="color:${recColor};font-weight:700">${h(prop.recommendation||'—')}</span> — ${h(prop.reason||'')}</div>
         <div style="display:flex;gap:8px;margin-top:8px">
-          <button class="ad-exec btn sm primary" data-act="approve">✓ 入库</button>
+          ${prop.merge_into?`<button class="ad-exec btn sm primary" data-act="merge">⤵ 合并更新到 ${h(prop.merge_into)}</button>`:''}
+          <button class="ad-exec btn sm ${prop.merge_into?'':'primary'}" data-act="approve">✓ 入库${prop.merge_into?'(新建)':''}</button>
           <button class="ad-exec btn sm" data-act="reject" style="color:var(--danger);border-color:var(--danger)">↩ 驳回</button>
         </div></div>`;
     },
     async onExecute(prop, dlg){
       const act = dlg.el && dlg.el.dataset.act;
       const adv = (prop.recommendation||'') + (prop.reason ? ('·'+prop.reason) : '');
+      if(act === 'merge'){
+        // ⤵ 合并更新：提交内容是已有条目的进展迭代，追加进目标条目（不新建不驳回）
+        const d = await api('/api/review/merge-update', {method:'POST', body:JSON.stringify({
+          user: item._profile || item.profile, file: item.file,
+          merge_into: prop.merge_into, merge_note: prop.merge_note || '',
+          suggested_status: prop.suggested_status || ''})});
+        api('/api/admin/team-agent/record-decision', {method:'POST', body:JSON.stringify({
+          kind:'review', entry:{title:item.title, category:item.category, decision:'合并更新', ai_advice:adv,
+          reason:'→'+(prop.merge_into||''), via:'dialog'}})}).catch(()=>{});
+        dlg.addSys(`⤵ 已合并进 <b>${h(d.merged_into||'')}</b>（${h(d.target_category||'')}）`
+          + (d.status_changed?`，状态已更新为「${h(d.status_changed)}」`:'')
+          + '，源提交已归档，提交人已收到通知');
+        dlg.el.disabled = true;
+        if(window.loadReview) window.loadReview();
+        if(window.wbRefreshRailCnt) window.wbRefreshRailCnt();
+        setTimeout(()=>{ if(dlg.close) dlg.close(true); }, 1800);
+        return;
+      }
       if(act === 'approve'){
         // 采纳 AI 建议的归类（suggested_category）+ AI 推导的价值字段（suggested_fields，
         // 完整度检查的落地：审核agent从内容推导出的 business_value 等直接随入库写入）

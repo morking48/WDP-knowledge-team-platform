@@ -229,7 +229,7 @@ def _review_system_prompt(ref: dict) -> str:
 - **若这条申请适合沉淀为需求或需要跟进，请对照上面成员职责给出「建议负责人」并说明理由**（谁的职责域最匹配）。
 - **每当你的审核建议有更新（首轮必须），在回复末尾输出 ```proposal 代码块**：
 ```proposal
-{{"suggested_category": "signals/requirements/designs/decisions/projects(项目开档申请)", "duplicate_risk": "无/低/中/高", "duplicate_of": "疑似重复的条目id或空串", "quality_notes": "质量简评", "recommendation": "通过/建议修订后通过/建议驳回", "reason": "一句话理由", "suggested_owner": "建议负责人用户名或空串", "suggested_reject_reason": "若建议驳回,给出发给提交人的驳回理由,否则空串", "suggested_fields": {{"business_value": "从内容推导的业务价值(推导不出则省略该键)", "customer": "...", "target_release": "..."}}}}
+{{"suggested_category": "signals/requirements/designs/decisions/projects(项目开档申请)", "duplicate_risk": "无/低/中/高", "duplicate_of": "疑似重复的条目id或空串", "quality_notes": "质量简评", "recommendation": "通过/建议修订后通过/建议驳回/合并更新", "reason": "一句话理由", "suggested_owner": "建议负责人用户名或空串", "suggested_reject_reason": "若建议驳回,给出发给提交人的驳回理由,否则空串", "suggested_fields": {{"business_value": "从内容推导的业务价值(推导不出则省略该键)", "customer": "...", "target_release": "..."}}, "merge_into": "若建议合并更新,填目标条目id(如REQ-20260729-001),否则空串", "merge_note": "若合并更新,一句话提炼增量进展(将写入目标条目tracking),否则空串", "suggested_status": "若进展暗示目标条目状态变化,给建议新状态(如已完成/开发中),否则空串"}}
 ```
 - proposal 块外用简洁中文回应管理员，不重复方案内容。
 - **驳回理由必须具体可操作**：`suggested_reject_reason` 不能只写"不符合标准"这类笼统结论，要指出**具体问题+怎么改**（如"缺少 urgency 字段，请补充紧急度"、"描述只有一句话，请补充问题背景和客户诉求"、"与 SIG-xxx 重复，请确认是否为同一件事"），让提交人看了知道下一步怎么做。"""
