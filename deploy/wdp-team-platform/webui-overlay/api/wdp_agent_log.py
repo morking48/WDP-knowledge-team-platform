@@ -47,11 +47,12 @@ def record_decision(kind: str, entry: dict) -> dict:
             import subprocess
             from api import knowledge as _kb
             root = _kb.get_knowledge_root()
-            subprocess.run(['git', '-C', str(root), 'add', str(f.relative_to(root))],
-                           capture_output=True, timeout=10)
-            subprocess.run(['git', '-C', str(root), 'commit', '-m',
-                            f'chore(agent-sessions): {kind} 决策记录'],
-                           capture_output=True, timeout=10)
+            if root:
+                subprocess.run(['git', '-C', str(root), 'add', str(f.relative_to(root))],
+                               capture_output=True, timeout=10)
+                subprocess.run(['git', '-C', str(root), 'commit', '-m',
+                                f'chore(agent-sessions): {kind} 决策记录'],
+                               capture_output=True, timeout=10)
         except Exception:
             pass
         return {'ok': True}

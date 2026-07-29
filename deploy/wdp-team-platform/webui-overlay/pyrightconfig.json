@@ -1,0 +1,32 @@
+{
+  "//": "WDP 定制层类型检查配置 — 只查我们自研的业务模块，不碰官方 Hermes 源码。",
+  "//2": "运行: cd web-ui && npx pyright  (pyright 已随 node 环境可用)",
+  "include": [
+    "api/agent_dialog.py",
+    "api/knowledge.py",
+    "api/knowledge_admin.py",
+    "api/knowledge_ops.py",
+    "api/me.py",
+    "api/me_skills.py",
+    "api/merge_agent.py",
+    "api/projects.py",
+    "api/review.py",
+    "api/team_agent.py",
+    "api/team_scheduler.py",
+    "api/team_skills_admin.py",
+    "api/team_tasks.py",
+    "api/users.py",
+    "api/wdp_agent_log.py",
+    "api/workspace_upload.py",
+    "api/_wdp_types.py"
+  ],
+  "exclude": [
+    "**/node_modules",
+    "**/__pycache__"
+  ],
+  "typeCheckingMode": "basic",
+  "reportMissingImports": false,
+  "reportMissingModuleSource": false,
+  "reportAttributeAccessIssue": false,
+  "pythonVersion": "3.10"
+}

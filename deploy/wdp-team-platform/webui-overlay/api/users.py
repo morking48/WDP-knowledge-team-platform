@@ -113,7 +113,7 @@ def list_users(with_stats: bool = False) -> list[dict]:
         if with_stats:
             try:
                 from api import knowledge_ops as _ops
-                entry['stats'] = _ops.get_user_stats(u.get('username'), u.get('profile') or u.get('username'))
+                entry['stats'] = _ops.get_user_stats(u.get('username') or '', u.get('profile') or u.get('username') or '')
             except Exception:
                 entry['stats'] = {'sessions': 0, 'contributions': 0, 'storage_mb': 0.0}
         out.append(entry)
@@ -273,7 +273,8 @@ def logout_user(username: str) -> None:
 
 def kick_user(username: str) -> bool:
     """管理员踢人：清空 active_token 使其 session 立即失效。"""
-    return set_user_active(username, get_user(username).get('active', True)) if get_user(username) else False
+    u = get_user(username)
+    return set_user_active(username, u.get('active', True)) if u else False
 
 
 def session_username(cookie_value: str) -> str | None:

@@ -10,6 +10,8 @@ WDP 团队工作台 · 归并 Agent（R10）.
 """
 from __future__ import annotations
 
+from api._wdp_types import ApiResult
+
 import json
 import logging
 import os
@@ -106,7 +108,7 @@ def get_merge_rule() -> str:
     return _DEFAULT_RULE
 
 
-def save_merge_rule(content: str) -> dict:
+def save_merge_rule(content: str) -> ApiResult:
     try:
         _rule_path().write_text(content or _DEFAULT_RULE, encoding='utf-8')
         return {'ok': True}
@@ -139,7 +141,7 @@ def get_review_rule() -> str:
     return _DEFAULT_REVIEW_RULE
 
 
-def save_review_rule(content: str) -> dict:
+def save_review_rule(content: str) -> ApiResult:
     try:
         _review_rule_path().write_text(content or _DEFAULT_REVIEW_RULE, encoding='utf-8')
         return {'ok': True}
@@ -173,7 +175,7 @@ def _team_key_and_model():
     return key, model, provider
 
 
-def analyze_merge(admin_user: str = 'admin') -> dict:
+def analyze_merge(admin_user: str = 'admin') -> ApiResult:
     """读活跃信号，调 LLM 分析可归并组，返回建议。"""
     from api import knowledge as _kb
     signals = [s for s in _kb.scan_category('signals')

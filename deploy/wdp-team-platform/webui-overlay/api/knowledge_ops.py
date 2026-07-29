@@ -17,6 +17,8 @@ admin 专属操作（对应原型工作台各视图的按钮）：
 """
 from __future__ import annotations
 
+from api._wdp_types import ApiResult
+
 import json
 import logging
 import subprocess
@@ -70,7 +72,7 @@ def _next_id(category: str, prefix: str) -> str:
 
 # ── 信号归并 ────────────────────────────────────────────────────────────────
 def merge_signals(ids: list[str], new_title: str, admin_user: str,
-                  new_body: str = '', new_urgency: str = '') -> dict:
+                  new_body: str = '', new_urgency: str = '') -> ApiResult:
     """把多条信号归并成一条新信号，源信号流转为 status=已合并。
 
     new_body: AI 生成的归并后描述（R32，管理员在对话框中确认/修改后传入）。
@@ -148,7 +150,7 @@ raw_excerpt: 归并自 {len(sources)} 条信号
 
 # ── 信号沉淀为需求 ──────────────────────────────────────────────────────────
 def signal_to_requirement(signal_id: str, admin_user: str,
-                          priority: str = 'P2', owner: str = '') -> dict:
+                          priority: str = 'P2', owner: str = '') -> ApiResult:
     """从信号生成需求草稿，写入 requirements/，源信号标记已转需求。"""
     sig = _kb.get_item('signals', signal_id)
     if not sig:
@@ -224,7 +226,7 @@ tracking:
 
 
 # ── 新建设计稿 ──────────────────────────────────────────────────────────────
-def new_design(title: str, requirement_id: str, designer: str) -> dict:
+def new_design(title: str, requirement_id: str, designer: str) -> ApiResult:
     """新建设计稿草稿，写入 designs/。"""
     if not title:
         return {'error': '标题必填'}, 400
@@ -274,7 +276,7 @@ target_release: 待定
 
 
 # ── 通知组员 ────────────────────────────────────────────────────────────────
-def notify_member(target_username: str, message: str, from_user: str) -> dict:
+def notify_member(target_username: str, message: str, from_user: str) -> ApiResult:
     """给成员发通知：写入其 profile 的 inbox/notifications.jsonl。"""
     if not target_username or not message:
         return {'error': '缺 target/message'}, 400
@@ -327,7 +329,7 @@ def list_notifications(handler) -> dict:
     return {'notifications': items, 'unread': unread, 'total': len(items)}
 
 
-def mark_notifications_read(handler) -> dict:
+def mark_notifications_read(handler) -> ApiResult:
     """把当前用户所有通知标记已读。"""
     inbox = _my_inbox(handler)
     if not inbox:
@@ -362,7 +364,7 @@ def get_req_decisions(item_id: str) -> dict:
             if isinstance(rr, str):
                 rr = [rr]
             if any(item_id in str(x) for x in rr):
-                full = _kb.get_item('decisions', dec.get('id') or dec.get('_file'))
+                full = _kb.get_item('decisions', dec.get('id') or dec.get('_file') or '')
                 out.append({
                     'id': dec.get('id'),
                     'title': dec.get('title'),
@@ -448,7 +450,7 @@ def list_library() -> dict:
     return {'sections': sections}
 
 
-def new_decision(title: str, decision_maker: str) -> dict:
+def new_decision(title: str, decision_maker: str) -> ApiResult:
     """新建决策记录草稿，写入 decisions/。"""
     if not title:
         return {'error': '标题必填'}, 400
@@ -532,7 +534,7 @@ def get_user_stats(username: str, profile: str) -> dict:
     return {'sessions': sessions, 'contributions': contributions, 'storage_mb': storage_mb}
 
 
-def archive_delete(category: str, item_id: str, operator: str = 'admin') -> dict:
+def archive_delete(category: str, item_id: str, operator: str = 'admin') -> ApiResult:
     """R6 删除：把条目移到 library/archive/_deleted/（软删除），30天后 cron 真删。保留 git 可追溯。"""
     import shutil
     root = _kb.get_knowledge_root()

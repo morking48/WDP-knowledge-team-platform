@@ -16,6 +16,8 @@ WDP 团队工作台 · 主 Agent 定时任务管理（team_tasks）.
 """
 from __future__ import annotations
 
+from api._wdp_types import ApiResult
+
 import json
 import logging
 import os
@@ -177,7 +179,7 @@ def _valid_cron(expr: str) -> bool:
         return len(expr.split()) == 5
 
 
-def update_task(tid: str, updates: dict) -> dict:
+def update_task(tid: str, updates: dict) -> ApiResult:
     """更新任务：enabled / schedule / params / prompt / name / desc。"""
     cfg = load_config()
     t = _find_task(cfg, tid)
@@ -197,7 +199,7 @@ def update_task(tid: str, updates: dict) -> dict:
     return {'ok': True, 'task': t}
 
 
-def create_custom_task(name: str, schedule: str, prompt: str) -> dict:
+def create_custom_task(name: str, schedule: str, prompt: str) -> ApiResult:
     """新建自定义任务（自然语言 prompt，预留接主 Agent）。"""
     if not name or not prompt:
         return {'error': '名称和 prompt 必填'}, 400
@@ -216,7 +218,7 @@ def create_custom_task(name: str, schedule: str, prompt: str) -> dict:
     return {'ok': True, 'task': task}
 
 
-def delete_task(tid: str) -> dict:
+def delete_task(tid: str) -> ApiResult:
     cfg = load_config()
     t = _find_task(cfg, tid)
     if not t:
@@ -275,7 +277,7 @@ def _run_custom_llm(prompt: str) -> str:
         return f'[自定义任务] LLM 调用失败：{e}'
 
 
-def run_task(tid: str, *, triggered_by: str = 'manual') -> dict:
+def run_task(tid: str, *, triggered_by: str = 'manual') -> ApiResult:
     """执行一个任务，记录 last_run/last_result。返回执行摘要。"""
     cfg = load_config()
     t = _find_task(cfg, tid)
@@ -311,7 +313,7 @@ def _notify_admins(message: str) -> int:
         from api import users as _users
         for u in _users.list_users():
             if u.get('role') == 'admin':
-                _ops.notify_member(u.get('username'), message, 'system')
+                _ops.notify_member(u.get('username') or '', message, 'system')
                 n += 1
     except Exception as e:
         logger.debug('notify admins failed: %s', e)
@@ -452,7 +454,7 @@ def _run_builtin(tid: str, params: dict) -> str:
                 msg = f'📎 上传文件处置提醒：共 {len(pending)} 个临时文件待处置，其中 {stale_cnt} 个已超 {stale_days} 天未转化进工作台。请到成员管理查看清单。'
                 for u in _users.list_users():
                     if u.get('role') == 'admin':
-                        _ops.notify_member(u.get('username'), msg, 'system')
+                        _ops.notify_member(u.get('username') or '', msg, 'system')
             except Exception as e:
                 logger.debug('upload-review notify failed: %s', e)
         lines = [f'扫描到 {len(pending)} 个上传临时文件，{stale_cnt} 个超 {stale_days} 天未处置：']

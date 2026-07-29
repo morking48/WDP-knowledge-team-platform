@@ -9,6 +9,8 @@ WDP 团队工作台 · 团队 Agent 配置（P1，admin 专属）.
 """
 from __future__ import annotations
 
+from api._wdp_types import ApiResult
+
 import logging
 import os
 import time
@@ -112,7 +114,7 @@ def list_soul_snapshots() -> list[dict]:
     return out
 
 
-def rollback_soul(snapshot_name: str = '') -> dict:
+def rollback_soul(snapshot_name: str = '') -> ApiResult:
     """回滚团队 SOUL 到指定快照（不传则回滚到最近一份历史快照）。
 
     注意：不传 snapshot_name 时，回滚目标是"最近的、且内容与当前不同的"快照——
@@ -152,7 +154,7 @@ def rollback_soul(snapshot_name: str = '') -> dict:
         return {'error': f'回滚失败: {e}'}, 500
 
 
-def save_team_soul(content: str) -> dict:
+def save_team_soul(content: str) -> ApiResult:
     """写团队规则 SOUL.md（写前自动快照当前版，供回滚）。"""
     sp = _soul_path()
     try:
@@ -183,7 +185,7 @@ def _inject_block(soul_text: str, block: str) -> str:
     return wrapped + '\n\n' + soul_text if soul_text.strip() else wrapped + '\n'
 
 
-def publish_team_rules() -> dict:
+def publish_team_rules() -> ApiResult:
     """把团队母本 SOUL.md 发布到所有成员 profile 的 SOUL.md（幂等替换标记块）。"""
     sp = _soul_path()
     if not sp.is_file():
@@ -239,7 +241,7 @@ def get_team_rules_readonly() -> dict:
     return {'rules': soul, 'published_at': get_publish_status()}
 
 
-def save_team_model(provider: str, model: str) -> dict:
+def save_team_model(provider: str, model: str) -> ApiResult:
     """改团队默认模型（config.yaml 的 model.provider/default）。
 
     只改 model 段，保留其它配置。用 yaml 读改写。

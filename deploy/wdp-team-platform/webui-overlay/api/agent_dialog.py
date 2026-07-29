@@ -19,6 +19,8 @@ WDP 团队工作台 · 决策中心对话式 Agent（R38 归并 / R41 审核）.
 """
 from __future__ import annotations
 
+from api._wdp_types import ApiResult
+
 import json
 import logging
 import re
@@ -305,7 +307,7 @@ def _skill_system_prompt(ref: dict) -> str:
 
 # ── 接口实现 ────────────────────────────────────────────────────────────────
 
-def start_dialog(kind: str, ref: dict) -> dict:
+def start_dialog(kind: str, ref: dict) -> ApiResult:
     _gc()
     if kind not in ('merge', 'review', 'rules', 'skill'):
         return {'error': f'未知对话类型 {kind}'}, 400
@@ -352,7 +354,7 @@ def start_dialog(kind: str, ref: dict) -> dict:
     return {'dialog_id': did, 'reply': reply, 'proposal': proposal}
 
 
-def send_dialog(dialog_id: str, message: str) -> dict:
+def send_dialog(dialog_id: str, message: str) -> ApiResult:
     _gc()
     with _LOCK:
         d = _DIALOGS.get(dialog_id)

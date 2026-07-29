@@ -36,3 +36,15 @@ wdp-team-hermes/
 ## WDP 知识注意
 
 产品精确数据（版本号/报价/API清单）以在线源为准。本工作台的 WDP 知识是快照 + 在线源路由；若需实时拉在线源（企微文档/飞书），需先配置对应 MCP。未配置时以快照为背景认知，关键数据人工核对。
+
+## 定制后端代码约定（web-ui/api/）
+
+改动 `web-ui/api/` 的自研业务模块（team_*/projects/review/knowledge_ops/me_skills 等）后，跑一次类型检查再交付：
+
+```bash
+cd web-ui && npx pyright   # 只查自研模块（pyrightconfig.json 已限定范围），应 0 error
+```
+
+- 类型检查只覆盖我们写的模块，不碰官方 Hermes 源码。**pyright 是开发期工具，不需部署到服务器**（服务器只跑 Python）。
+- API handler 统一返回契约：成功 `dict`，失败 `(dict, http_status)` 元组，标注用 `api/_wdp_types.py` 的 `ApiResult`（该文件是运行时依赖，必须随代码部署）。
+- pyright 报 None 相关错误时优先当真 bug 查（很可能是 `None` 未防御的潜在崩溃点），不要用 `# type: ignore` 图省事糊过去。

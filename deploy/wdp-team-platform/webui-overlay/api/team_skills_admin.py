@@ -11,6 +11,8 @@
 """
 from __future__ import annotations
 
+from api._wdp_types import ApiResult
+
 import logging
 import re
 import time
@@ -99,7 +101,7 @@ def list_team_skills() -> dict:
     return {'skills': skills}
 
 
-def get_team_skill(skill_dir: str) -> dict:
+def get_team_skill(skill_dir: str) -> ApiResult:
     """读取某团队 skill 的 SKILL.md 全文（优先返回草稿内容）。"""
     d = _find_skill(skill_dir)
     if not d:
@@ -124,7 +126,7 @@ def get_team_skill(skill_dir: str) -> dict:
     }
 
 
-def save_team_skill_draft(skill_dir: str, content: str) -> dict:
+def save_team_skill_draft(skill_dir: str, content: str) -> ApiResult:
     """保存草稿（不动正式 SKILL.md）。"""
     d = _find_skill(skill_dir)
     if not d:
@@ -168,7 +170,7 @@ def _validate_skill_frontmatter(text: str) -> dict:
     return {'ok': True}
 
 
-def publish_team_skill(skill_dir: str, content: str | None = None) -> dict:
+def publish_team_skill(skill_dir: str, content: str | None = None) -> ApiResult:
     """发布：把草稿（或传入内容）写回正式 SKILL.md，成员实时同步。
 
     content 为空时用已保存的草稿；两者都无则报错。
@@ -213,7 +215,7 @@ def publish_team_skill(skill_dir: str, content: str | None = None) -> dict:
     return {'ok': True, 'message': f'已发布团队技能「{skill_dir}」，成员将实时同步'}
 
 
-def discard_team_skill_draft(skill_dir: str) -> dict:
+def discard_team_skill_draft(skill_dir: str) -> ApiResult:
     """丢弃草稿。"""
     draft_f = _drafts_dir() / (skill_dir + '.md')
     try:
@@ -233,7 +235,7 @@ _PROTECTED_SKILLS = {'signal-intake', 'requirement-triage',
 _DIR_RE = re.compile(r'^[a-z0-9][a-z0-9-_]{1,63}$')
 
 
-def create_team_skill(skill_dir: str, name: str = '', description: str = '') -> dict:
+def create_team_skill(skill_dir: str, name: str = '', description: str = '') -> ApiResult:
     """新建团队 skill（骨架 SKILL.md，创建后用技能助手充实再发布）。
 
     写入第一个团队 skill 目录（工程 skills/）。
@@ -281,7 +283,7 @@ description: {description}
             'message': f'已创建技能「{skill_dir}」骨架，用「🤖 技能助手」充实内容后发布'}
 
 
-def delete_team_skill(skill_dir: str) -> dict:
+def delete_team_skill(skill_dir: str) -> ApiResult:
     """删除团队 skill（内置四个核心 skill 受保护不可删）。"""
     if skill_dir in _PROTECTED_SKILLS:
         return {'error': f'「{skill_dir}」是内置核心技能，团队工作流依赖它，不可删除'}, 403

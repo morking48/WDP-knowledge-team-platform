@@ -26,6 +26,8 @@ Hermes Web UI -- 入库审核 API（WDP 团队工作台 R3 扩展）.
 """
 from __future__ import annotations
 
+from api._wdp_types import ApiResult
+
 import json
 import logging
 import os
@@ -84,7 +86,7 @@ def _active_profile_inbox() -> Path | None:
 
 # ── 提交入库（成员侧）─────────────────────────────────────────────────────
 def submit_request(profile: str, username: str, title: str, category: str,
-                   content: str, suggestion: dict) -> dict:
+                   content: str, suggestion: dict) -> ApiResult:
     """成员提交入库申请：写 inbox/<ts>-<safe-title>.md + .meta.json"""
     inbox = _user_inbox(profile)
     if inbox is None:
@@ -119,7 +121,7 @@ def submit_request(profile: str, username: str, title: str, category: str,
         from api import knowledge_ops as _ops
         for u in _users.list_users():
             if u.get('role') == 'admin':
-                _ops.notify_member(u.get('username'),
+                _ops.notify_member(u.get('username') or '',
                                    f'📥 {username} 提交了入库申请「{title}」（{category}），请审核',
                                    'system')
     except Exception as e:
@@ -183,7 +185,7 @@ def get_pending_item(profile: str, fname: str) -> dict | None:
 
 # ── 通过入库（admin）───────────────────────────────────────────────────────
 def approve(profile: str, fname: str, final_name: str | None,
-            final_category: str | None, admin_note: str, admin_user: str) -> dict:
+            final_category: str | None, admin_note: str, admin_user: str) -> ApiResult:
     """通过：移文件到 knowledge/<cat>/<final_name>.md，git commit，inbox 归档。"""
     item = get_pending_item(profile, fname)
     if not item:
@@ -229,6 +231,8 @@ def approve(profile: str, fname: str, final_name: str | None,
         # inbox 归档 + 通知提交人（复用下方逻辑的简化版）
         try:
             inbox = _user_inbox(profile)
+            if inbox is None:
+                raise RuntimeError('inbox 目录不可用')
             archive = inbox.parent / ARCHIVE_DIRNAME / time.strftime('%Y%m%d-%H%M%S')
             archive.mkdir(parents=True, exist_ok=True)
             shutil.move(str(inbox / fname), str(archive / fname))
@@ -291,6 +295,8 @@ def approve(profile: str, fname: str, final_name: str | None,
     # inbox 归档（移到 .inbox-archive/<profile>/<ts>/）
     try:
         inbox = _user_inbox(profile)
+        if inbox is None:
+            raise RuntimeError('inbox 目录不可用')
         archive = inbox.parent / ARCHIVE_DIRNAME / time.strftime('%Y%m%d-%H%M%S')
         archive.mkdir(parents=True, exist_ok=True)
         shutil.move(str(inbox / fname), str(archive / fname))
@@ -329,7 +335,7 @@ def approve(profile: str, fname: str, final_name: str | None,
 
 
 # ── 驳回 ──────────────────────────────────────────────────────────────────
-def reject(profile: str, fname: str, reason: str, admin_user: str) -> dict:
+def reject(profile: str, fname: str, reason: str, admin_user: str) -> ApiResult:
     """驳回：更新 meta.status=rejected 附理由，文件留在 inbox 让成员修订。"""
     inbox = _user_inbox(profile)
     if not inbox:

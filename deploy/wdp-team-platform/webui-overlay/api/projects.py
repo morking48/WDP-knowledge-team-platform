@@ -15,6 +15,8 @@
 """
 from __future__ import annotations
 
+from api._wdp_types import ApiResult
+
 import logging
 import re
 import time
@@ -27,7 +29,10 @@ _DIR_RE = re.compile(r'^[\w\u4e00-\u9fff][\w\u4e00-\u9fff-]{0,62}$')  # 中英�
 
 def _projects_root() -> Path:
     from api.knowledge import get_knowledge_root
-    return Path(get_knowledge_root()) / 'projects'
+    root = get_knowledge_root()
+    if not root:
+        raise RuntimeError('knowledge 根目录不可用')
+    return Path(root) / 'projects'
 
 
 def _parse_fm(text: str) -> dict:
@@ -133,7 +138,7 @@ def list_projects() -> dict:
     return {'projects': projects}
 
 
-def create_project(body: dict, creator: str) -> dict:
+def create_project(body: dict, creator: str) -> ApiResult:
     """建档（管理员直接建，或审核通过后由 review 调用）。"""
     pdir = (body.get('dir') or body.get('title') or '').strip()
     title = (body.get('title') or pdir).strip()
@@ -205,7 +210,7 @@ status: 进行中
     return {'ok': True, 'dir': pdir, 'id': pid, 'message': f'项目「{title}」已开档'}
 
 
-def get_project(pdir: str) -> dict:
+def get_project(pdir: str) -> ApiResult:
     """项目详情：档案全文 + 需求列表 + 交付材料列表。"""
     d = _projects_root() / pdir
     pm = d / 'project.md'
@@ -234,7 +239,7 @@ def get_project(pdir: str) -> dict:
             'requirements': reqs, 'deliverables': dlvs}
 
 
-def update_project_field(pdir: str, field: str, value: str, admin: str) -> dict:
+def update_project_field(pdir: str, field: str, value: str, admin: str) -> ApiResult:
     """改项目档案 frontmatter 字段（phase/owner/status 流转）。"""
     allowed = {'phase', 'owner', 'status', 'customer', 'description'}
     if field not in allowed:
@@ -256,7 +261,7 @@ def update_project_field(pdir: str, field: str, value: str, admin: str) -> dict:
 # ══════════════════════════════════════════════════════════════════
 
 def signal_to_project_req(signal_id: str, pdir: str, admin_user: str,
-                          owner: str = '') -> dict:
+                          owner: str = '') -> ApiResult:
     """把公共信号池的一条信号沉淀为某项目的项目需求（Q3：信号入口统一）。
 
     照 knowledge_ops.signal_to_requirement 模式：生成 PREQ、源信号标记已流转、
@@ -337,7 +342,7 @@ owner: {owner or '待分配'}
             'message': f'已沉淀为项目「{pdir}」的需求 {preq_id}'}
 
 
-def update_project_req(pdir: str, fname: str, updates: dict, admin: str) -> dict:
+def update_project_req(pdir: str, fname: str, updates: dict, admin: str) -> ApiResult:
     """改项目需求字段（status/priority/owner 流转）。"""
     f = _projects_root() / pdir / 'requirements' / Path(fname).name
     if not f.is_file():
@@ -370,7 +375,7 @@ def update_project_req(pdir: str, fname: str, updates: dict, admin: str) -> dict
 #  交付材料（必绑项目需求）
 # ══════════════════════════════════════════════════════════════════
 
-def create_deliverable(pdir: str, body: dict, creator: str) -> dict:
+def create_deliverable(pdir: str, body: dict, creator: str) -> ApiResult:
     d = _projects_root() / pdir
     if not (d / 'project.md').is_file():
         return {'error': '项目不存在'}, 404
@@ -430,7 +435,7 @@ status: 草稿
     return {'ok': True, 'id': dlv_id, 'message': f'交付材料 {dlv_id} 已创建（{phase}，绑定 {req_id}）'}
 
 
-def update_deliverable(pdir: str, fname: str, updates: dict, admin: str) -> dict:
+def update_deliverable(pdir: str, fname: str, updates: dict, admin: str) -> ApiResult:
     f = _projects_root() / pdir / 'deliverables' / Path(fname).name
     if not f.is_file():
         return {'error': '交付材料不存在'}, 404
@@ -450,7 +455,7 @@ def update_deliverable(pdir: str, fname: str, updates: dict, admin: str) -> dict
     return {'ok': True, 'changed': changed}
 
 
-def get_item_body(pdir: str, kind: str, fname: str) -> dict:
+def get_item_body(pdir: str, kind: str, fname: str) -> ApiResult:
     """读项目需求/交付材料正文（详情展开用）。"""
     sub = 'requirements' if kind == 'req' else 'deliverables'
     f = _projects_root() / pdir / sub / Path(fname).name

@@ -15,6 +15,8 @@
 """
 from __future__ import annotations
 
+from api._wdp_types import ApiResult
+
 import shutil
 from pathlib import Path
 
@@ -86,7 +88,7 @@ def _personal_base(home: Path) -> Path:
     return home / 'skills' / 'personal'
 
 
-def list_skills(handler) -> dict:
+def list_skills(handler) -> ApiResult:
     u, home = _current(handler)
     if not u or not home:
         return {'error': '未登录'}, 401
@@ -105,7 +107,7 @@ def list_skills(handler) -> dict:
     return {'team': team, 'personal': personal}
 
 
-def toggle_skill(handler, name: str, enabled: bool) -> dict:
+def toggle_skill(handler, name: str, enabled: bool) -> ApiResult:
     """物理移动实现真开关：启用=移回 personal/，停用=移到 personal/.disabled/。"""
     u, home = _current(handler)
     if not u or not home:
@@ -130,7 +132,7 @@ def toggle_skill(handler, name: str, enabled: bool) -> dict:
     return {'ok': True, 'name': name, 'enabled': enabled}
 
 
-def delete_skill(handler, name: str) -> dict:
+def delete_skill(handler, name: str) -> ApiResult:
     u, home = _current(handler)
     if not u or not home:
         return {'error': '未登录'}, 401
