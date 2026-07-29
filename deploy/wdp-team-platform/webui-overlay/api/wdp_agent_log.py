@@ -99,11 +99,17 @@ def history_stats(kind: str) -> dict:
 
 
 def few_shot_block(kind: str, n: int = 5) -> str:
-    """把最近决策格式化成 prompt 注入块（空历史返回空串）。"""
+    """把最近决策格式化成 prompt 注入块（空历史返回空串）。
+
+    隔离规训：历史决策是"别的条目"的记录，只作风格参考——注入块头尾都
+    明确声明与本次内容无关，防 LLM 把旧条目的结论/标题套到当前分析上
+    （否则管理员会感觉"对话被串联了"，且影响判断合理性）。
+    """
     items = recent_decisions(kind, n)
     if not items:
         return ''
-    lines = ['\n## 团队历史决策参考（请学习团队的判断风格）']
+    lines = ['\n## 团队历史决策参考（仅学习判断风格——注意：以下是**其他条目**的历史记录，'
+             '与你本次要分析的内容**无关**，禁止引用其中的标题/结论/理由来分析本条）']
     for it in items:
         if kind == 'merge':
             adopted = '采纳' if it.get('adopted') else ('修正后执行' if it.get('final_title') else '未执行')
@@ -112,4 +118,5 @@ def few_shot_block(kind: str, n: int = 5) -> str:
         elif kind == 'review':
             lines.append(f"- 提交「{it.get('title','')}」({it.get('category','')}) AI建议:{it.get('ai_advice','')[:40]}"
                          f" → 管理员{it.get('decision','')}{('，理由:'+it.get('reason','')) if it.get('reason') else ''}")
+    lines.append('（历史参考结束。你的分析必须完全基于本次待审内容本身。）')
     return '\n'.join(lines) + '\n'
