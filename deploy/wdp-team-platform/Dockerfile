@@ -152,6 +152,7 @@ COPY --chown=root:root scripts/submit_review.py \
      scripts/update_member_profile.py \
      scripts/save_personal_skill.py \
      scripts/query_knowledge.py \
+     scripts/feishu_doc.py \
      /opt/wdp-scripts/
 
 # -----------------------------------------------------------------------------

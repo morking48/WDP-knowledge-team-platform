@@ -206,8 +206,10 @@ window.wbOpenReviewDialog = function(item){
       const act = dlg.el && dlg.el.dataset.act;
       const adv = (prop.recommendation||'') + (prop.reason ? ('·'+prop.reason) : '');
       if(act === 'approve'){
+        // 采纳 AI 建议的归类（suggested_category），传给后端决定入库到哪个池；无建议则后端回落申报类目
         const d = await api('/api/review/approve', {method:'POST', body:JSON.stringify({
-          user: item._profile || item.profile, file: item.file})});
+          user: item._profile || item.profile, file: item.file,
+          final_category: prop.suggested_category || undefined})});
         api('/api/admin/team-agent/record-decision', {method:'POST', body:JSON.stringify({
           kind:'review', entry:{title:item.title, category:item.category, decision:'通过', ai_advice:adv, reason:'', via:'dialog'}})}).catch(()=>{});
         // L4 稳态：git commit 结果显式回报（失败=有文件无版本记录，必须让管理员知道）

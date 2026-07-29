@@ -12,6 +12,7 @@ from __future__ import annotations
 from api._wdp_types import ApiResult
 
 import logging
+import json
 import os
 import time
 from pathlib import Path
@@ -273,3 +274,76 @@ def model_options() -> dict:
         return {'providers': {k: v.get('models', []) for k, v in PROVIDERS.items()}}
     except Exception:
         return {'providers': {'openrouter': ['moonshotai/kimi-k3']}}
+
+
+# ── 团队级集成授权（飞书等，全团队共用一套凭据）──────────────────────────────
+# 存团队 home 下 integrations.json（与 SOUL.md/config.yaml 同级）。
+# hermes-home/ 已 gitignore；部署时该文件在服务器持久化卷上，不进任何仓库。
+_SUPPORTED_INTEGRATIONS = {
+    'feishu': ['app_id', 'app_secret'],
+}
+
+
+def _integrations_path() -> Path:
+    return _team_home() / 'integrations.json'
+
+
+def _mask_secret(s: str) -> str:
+    s = s or ''
+    if len(s) <= 10:
+        return '••••' if s else ''
+    return s[:4] + '•' * 8 + s[-4:]
+
+
+def _load_team_integrations() -> dict:
+    p = _integrations_path()
+    if p.is_file():
+        try:
+            return json.loads(p.read_text(encoding='utf-8')) or {}
+        except Exception:
+            return {}
+    return {}
+
+
+def get_team_integrations() -> dict:
+    """读团队集成配置（secret 打码）。"""
+    data = _load_team_integrations()
+    out = {}
+    for prov, fields in _SUPPORTED_INTEGRATIONS.items():
+        cfg = data.get(prov) or {}
+        entry = {}
+        for f in fields:
+            val = cfg.get(f, '')
+            entry[f] = _mask_secret(val) if 'secret' in f else val
+        entry['configured'] = bool(cfg.get(fields[0]) and cfg.get(fields[-1]))
+        entry['updated_at'] = cfg.get('updated_at', '')
+        out[prov] = entry
+    return {'integrations': out}
+
+
+def save_team_integration(provider: str, values: dict) -> ApiResult:
+    """写团队某集成凭据。secret 为空/打码值时保留原值。"""
+    if provider not in _SUPPORTED_INTEGRATIONS:
+        return {'error': f'不支持的集成: {provider}'}, 400
+    fields = _SUPPORTED_INTEGRATIONS[provider]
+    data = _load_team_integrations()
+    cur = data.get(provider) or {}
+    new = dict(cur)
+    for f in fields:
+        v = (values.get(f) or '').strip()
+        if 'secret' in f and (not v or '•' in v):
+            continue
+        new[f] = v
+    new['updated_at'] = time.strftime('%Y-%m-%d %H:%M:%S')
+    data[provider] = new
+    try:
+        p = _integrations_path()
+        p.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+        try:
+            os.chmod(p, 0o600)
+        except Exception:
+            pass
+    except Exception as e:
+        return {'error': f'保存失败: {e}'}, 500
+    return {'ok': True, 'provider': provider,
+            'configured': bool(new.get(fields[0]) and new.get(fields[-1]))}

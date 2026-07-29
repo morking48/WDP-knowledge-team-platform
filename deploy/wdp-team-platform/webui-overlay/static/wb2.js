@@ -104,18 +104,31 @@ function bindReviewActions(){
 async function doApprove(){
   if(!_rvSel){ toast('请先选择待审项', true); return; }
   const sug = _rvSel.suggestion || {};
-  const finalName = await wbPrompt('最终文件名（.md 结尾）：', {value: sug.suggested_name || _rvSel.file});
-  if(!finalName) return;
-  const note = await wbPrompt('审核备注（可选）：') || '';
+  // 归类：默认选中 AI 建议类目 / 申报类目（成员提交时的类别）
+  const defCat = sug.target_category || _rvSel.category || 'signals';
+  const catOpts = [
+    {value:'signals', label:'信号 signals'},
+    {value:'requirements', label:'需求 requirements'},
+    {value:'designs', label:'产品设计 designs'},
+    {value:'decisions', label:'决策 decisions'},
+    {value:'projects', label:'项目开档 projects'},
+  ];
+  const form = await wbForm('通过入库', [
+    {key:'category', label:'归类到哪个池', type:'select', value:defCat, options:catOpts},
+    {key:'final_name', label:'最终文件名（.md 结尾）', type:'text', value: sug.suggested_name || _rvSel.file, required:true},
+    {key:'note', label:'审核备注（可选）', type:'textarea', value:''},
+  ], {icon:'📥', okText:'通过入库'});
+  if(!form) return;
+  if(!form.final_name){ toast('文件名必填', true); return; }
   try{
     const d = await api('/api/review/approve', {method:'POST', body:JSON.stringify({
-      user:_rvSel._profile, file:_rvSel.file, final_name:finalName, note
+      user:_rvSel._profile, file:_rvSel.file, final_name:form.final_name, final_category:form.category, note:form.note||''
     })});
     toast('已入库到 '+(d.final_path||''));
     // 记录审核决策供 few-shot 学习（基础入口无 AI 分析，ai_advice 留空；对话版审核才带 AI 建议）
     api('/api/admin/team-agent/record-decision', {method:'POST', body:JSON.stringify({
-      kind:'review', entry:{title:_rvSel.title, category:_rvSel.category, decision:'通过',
-        ai_advice:'', reason:note||''}
+      kind:'review', entry:{title:_rvSel.title, category:form.category, decision:'通过',
+        ai_advice:'', reason:form.note||''}
     })}).catch(()=>{});
     W.LOADED.board = false; if(window.wbRefreshRailCnt)window.wbRefreshRailCnt();  // 工作台需刷新
     window.loadReview();
@@ -315,6 +328,8 @@ window.loadTeamAgent = async function(){
       W.LOADED.teamagent = false; window.loadTeamAgent();
     }catch(e){ toast('发布失败：'+e.message, true); }
   };
+  // 集成授权（团队级，飞书等）
+  loadTeamIntegrations(d);
   // 团队默认模型
   const box = $('#teamModelBox');
   if(box){
@@ -791,6 +806,49 @@ async function loadMeMemory(){
     ta.value = (ta.value.trim() ? ta.value.trimEnd()+'\n' : '') + '- ' + line;
     toast('已追加，记得点「保存 Memory」');
     ta.scrollTop = ta.scrollHeight;
+  };
+}
+
+// 团队级集成授权（admin 在团队 Agent 页配，全团队共用）— 由 loadTeamAgent 调用
+async function loadTeamIntegrations(d){
+  const box = $('#teamIntegrationsBox');
+  if(!box) return;
+  const fs = (d && d.integrations && d.integrations.feishu) || {};
+  const cfgTag = fs.configured
+    ? `<span class="tag green" style="font-size:10px">已配置</span>`
+    : `<span class="tag gray" style="font-size:10px">未配置</span>`;
+  box.innerHTML = `
+    <div style="border:1px solid var(--line);border-radius:12px;padding:16px;background:rgba(255,255,255,.7);max-width:560px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <span style="font-size:15px;font-weight:700">飞书（Lark）</span>${cfgTag}
+      </div>
+      <div style="font-size:11.5px;color:var(--ink-3);margin-bottom:14px">
+        自建应用凭据（开放平台→开发者后台→凭证与基础信息）。全团队共用一套，成员读飞书文档时自动使用。${fs.updated_at?('上次更新：'+h(fs.updated_at)):''}
+      </div>
+      <div style="margin-bottom:12px">
+        <label style="font-size:12px;font-weight:600;color:var(--ink-2)">App ID</label>
+        <input id="fsAppId" type="text" placeholder="cli_xxxxxxxx" value="${h(fs.app_id||'')}"
+          style="width:100%;padding:9px 12px;border-radius:9px;border:1px solid var(--line);font-size:13px;font-family:ui-monospace,monospace;background:#fff;color:var(--ink);margin-top:5px">
+      </div>
+      <div style="margin-bottom:16px">
+        <label style="font-size:12px;font-weight:600;color:var(--ink-2)">App Secret</label>
+        <input id="fsAppSecret" type="text" placeholder="${fs.configured?'已保存（留空或不改则保留原值）':'输入 App Secret'}" value="${h(fs.app_secret||'')}"
+          style="width:100%;padding:9px 12px;border-radius:9px;border:1px solid var(--line);font-size:13px;font-family:ui-monospace,monospace;background:#fff;color:var(--ink);margin-top:5px">
+        <div style="font-size:11px;color:var(--ink-3);margin-top:4px">🔒 存服务器团队配置（integrations.json，已 gitignore），不进任何仓库、不发往前端明文。</div>
+      </div>
+      <div style="text-align:right"><button class="btn sm primary" id="saveFeishuBtn">保存飞书凭据</button></div>
+    </div>`;
+  $('#saveFeishuBtn').onclick = async ()=>{
+    const app_id = $('#fsAppId').value.trim();
+    const secret = $('#fsAppSecret').value.trim();
+    if(!app_id){ toast('请填 App ID', true); return; }
+    try{
+      const r = await api('/api/admin/team-agent/integration', {method:'POST', body:JSON.stringify({
+        provider:'feishu', values:{app_id, app_secret: secret}})});
+      toast(r.configured ? '✅ 飞书凭据已保存（全团队生效）' : '已保存（凭据尚不完整）');
+      if(window.__wb) window.__wb.LOADED.teamagent=false;
+      if(window.loadTeamAgent) window.loadTeamAgent();
+    }catch(e){ toast('保存失败：'+e.message, true); }
   };
 }
 

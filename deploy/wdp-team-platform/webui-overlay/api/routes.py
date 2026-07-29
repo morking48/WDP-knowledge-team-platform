@@ -5245,6 +5245,7 @@ def handle_get(handler, parsed) -> bool:
         res['model_options'] = _ta.model_options().get('providers', {})
         res['published_at'] = _ta.get_publish_status()
         res['snapshots'] = _ta.list_soul_snapshots()
+        res['integrations'] = _ta.get_team_integrations().get('integrations', {})
         return j(handler, res)
 
     # ── 团队 Skill 编辑（admin）──────────────────────────────────────
@@ -6006,6 +6007,9 @@ def handle_post(handler, parsed) -> bool:
             return j(handler, b, status=code)
         return j(handler, res)
 
+    if parsed.path == "/api/me/integrations":
+        return j(handler, {"error": "飞书等集成已改为团队级配置，请到「团队 Agent → 集成授权」由管理员配置"}, status=410)
+
     # ── 个人中心补全：模型渠道 + 设备/工作库登记 ─────────────────────
     if parsed.path.startswith("/api/me/skills/"):
         from api import me_skills as _msk
@@ -6100,6 +6104,8 @@ def handle_post(handler, parsed) -> bool:
                         res = _ta.publish_team_rules()
             elif p == "/api/admin/team-agent/model":
                 res = _ta.save_team_model(body.get("provider") or "", body.get("model") or "")
+            elif p == "/api/admin/team-agent/integration":
+                res = _ta.save_team_integration(body.get("provider") or "", body.get("values") or {})
             elif p == "/api/admin/team-agent/rollback-rules":
                 res = _ta.rollback_soul(body.get("snapshot") or "")
             elif p == "/api/admin/team-agent/merge-rule":
