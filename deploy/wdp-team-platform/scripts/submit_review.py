@@ -71,8 +71,9 @@ def validate_content(category: str, content: str, root: Path) -> list:
     required = []
     enforce = True
     if cfg_file.is_file():
-        # 极简 yaml 子集解析（只取该分区的 required_fields / enforce_template）
+        # 极简 yaml 子集解析（只取该分区自身的 required_fields / enforce_template）
         in_cat = False
+        in_sub = False
         for line in cfg_file.read_text(encoding='utf-8').splitlines():
             if re.match(rf'^  {re.escape(category)}:\s*$', line):
                 in_cat = True
@@ -80,6 +81,18 @@ def validate_content(category: str, content: str, root: Path) -> list:
             if in_cat:
                 if re.match(r'^  \S', line):   # 下一个分区
                     break
+                # 嵌套子段（如 projects 的 sub_requirements/sub_deliverables，4空格缩进）：
+                # 其 required_fields 属于子分区，不属于本分区——进入子段后停止采集
+                if re.match(r'^    \S', line) and line.rstrip().endswith(':'):
+                    in_sub = True
+                    continue
+                if in_sub and re.match(r'^      ', line):
+                    continue   # 子段内容，跳过
+                if in_sub and re.match(r'^    \S', line):
+                    in_sub = True if line.rstrip().endswith(':') else in_sub
+                    continue
+                if in_sub:
+                    continue
                 mm = re.search(r'required_fields:\s*\[([^\]]*)\]', line)
                 if mm:
                     required = [x.strip() for x in mm.group(1).split(',') if x.strip()]

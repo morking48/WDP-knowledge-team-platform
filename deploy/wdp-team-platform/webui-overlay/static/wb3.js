@@ -69,8 +69,8 @@ function renderModeBanner(){
   const mode = window._activeMode;
   if(!mode){ if(banner) banner.remove(); return; }
   const cfg = {
-    design: {icon:'🎯', text:'设计收敛模式', desc:'agent 正按流程推进：批量拷问 → 不可逆决策 → 零歧义方案文档'},
-    signal: {icon:'📥', text:'沉淀入库模式', desc:'粘贴原始信息（纪要/反馈/文档），agent 判类清洗成信号/需求/设计/项目并提交入库审核'},
+    design: {icon:'🎯', text:'设计收敛模式', desc:'多轮流程：批量拷问 → 不可逆决策 → 方案文档；收敛完成后点 ✕ 退出'},
+    signal: {icon:'📥', text:'沉淀入库模式', desc:'发送一条即完成：agent 判类清洗后提交入库，随后自动退出'},
   }[mode];
   const html = `<span style="font-weight:700">${cfg.icon} ${cfg.text}</span>
     <span style="font-size:11.5px;color:var(--ink-3);margin-left:8px">${cfg.desc}</span>
@@ -649,7 +649,26 @@ async function switchSession(sid){
       _saveVisibleCnt();
       const _cntEl = document.querySelector('#sessList .sess[data-sid="'+sid+'"] .sm');
       if(_cntEl && !/回复中/.test(_cntEl.textContent)) _cntEl.textContent = shown.length + ' 条消息';
-      tr.innerHTML = shown.map(m => renderMsg(m.role, m.content||m.text||'')).join('')
+      // 视觉归组：连续的 assistant 消息（同一轮多步 agentic 执行，中间没有 user 打断）
+      // 合并成一个气泡，跟实时流式观感一致——避免历史恢复时一轮任务散成一堆过程气泡。
+      // 最后一段是本轮"结论"，前面的中间步骤（确认位置/重试等）折叠弱化。
+      const groups = [];
+      for(const m of shown){
+        if(m.role === 'user'){ groups.push({role:'user', parts:[(m.content||m.text||'')]}); }
+        else {
+          const last = groups[groups.length-1];
+          if(last && last.role === 'assistant') last.parts.push(m.content||m.text||'');
+          else groups.push({role:'assistant', parts:[(m.content||m.text||'')]});
+        }
+      }
+      tr.innerHTML = groups.map(g=>{
+        if(g.role === 'user') return renderMsg('user', g.parts[0]);
+        if(g.parts.length === 1) return renderMsg('assistant', g.parts[0]);
+        // 多步：最后一段为结论正常显示，前面 N 步折叠进「执行过程」
+        const steps = g.parts.slice(0, -1);
+        const finalPart = g.parts[g.parts.length - 1];
+        return renderAssistantGrouped(steps, finalPart);
+      }).join('')
         || '<div style="color:var(--ink-3);text-align:center;padding:20px">（空对话）</div>';
       tr.scrollTop = tr.scrollHeight;
     }
@@ -714,6 +733,15 @@ async function onChatModelChange(e){
 }
 
 // ── 消息渲染 ──
+// 一轮多步 agent 执行归组渲染：中间步骤折叠进「执行过程」，最后一段为结论正常显示
+function renderAssistantGrouped(steps, finalPart){
+  const stepsHtml = steps.map(s=>`<div style="margin-bottom:6px;padding-bottom:6px;border-bottom:1px dashed var(--line-2)">${renderMd(s)}</div>`).join('');
+  const detail = `<details style="margin-bottom:8px"><summary style="cursor:pointer;color:var(--ink-3);font-size:12px;user-select:none">🔧 执行过程（${steps.length} 步）</summary><div style="margin-top:8px;padding:8px 10px;background:rgba(0,0,0,.02);border-radius:8px;font-size:12.5px;color:var(--ink-2)">${stepsHtml}</div></details>`;
+  return `<div class="cmsg ai"><div class="cav">AI</div><div class="cb">
+    <div class="cn">你的 agent</div><div class="cc">${detail}${renderMd(finalPart)}</div>
+    <div class="msg-acts"><button data-mact="copy" title="复制">📋 复制</button><button data-mact="retry" title="用上一条消息重新发送">🔄 重试</button></div></div></div>`;
+}
+
 function renderMsg(role, content){
   if(role === 'user'){
     return `<div class="cmsg me"><div class="cav">${h((W.USER.username||'我')[0])}</div><div class="cb">
@@ -831,8 +859,14 @@ async function doSend(){
   // 🎯 能力模式：把模式流程规则拼进发给 agent 的消息（强制注入，不靠 LLM 自觉读 SOUL）
   let sendMsg = msg;
   if(window._activeMode){
-    sendMsg = _modeInjectedMessage(window._activeMode, msg);
+    const _m = window._activeMode;
+    sendMsg = _modeInjectedMessage(_m, msg);
     window._chAnswers = {};   // 清空本轮已选 choices（答案已随消息发出）
+    // 沉淀入库=一次性任务：本条消息带指令送出后即退出模式（下条消息回归普通对话）。
+    // 设计模式=多轮收敛流程，保持激活，走完由 agent 提示或手动退出。
+    if(_m === 'signal'){
+      exitActiveMode({toast:'已提交本轮内容，沉淀入库模式已退出（需再沉淀请重新点开）'});
+    }
   }
   _lastUserMsg = sendMsg;   // 记录发送消息，供"重试上一条"复用（不含附件提示）
   appendMsg('user', userText);

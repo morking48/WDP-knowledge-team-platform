@@ -329,6 +329,7 @@ async function toggleSignalDetail(row){
           <div class="sec"><div class="sec-t">🔑 关键信息</div><div class="kv">
             <div><div class="k">信号编号</div><div class="v">${h(it.id||'—')}</div></div>
             <div><div class="k">相关模块</div><div class="v">${h(it.related_module||'—')}</div></div>
+            ${it.related_project?`<div><div class="k">📦 归属项目</div><div class="v" style="color:var(--brand-strong);font-weight:700">${h(it.related_project)}</div></div>`:''}
             <div><div class="k">来源说明</div><div class="v">${h(it.source_ref||it.source||'—')}</div></div>
             <div><div class="k">文件</div><div class="v" style="font-family:monospace;font-size:11px">${h(it._file||'—')}</div></div>
           </div></div>

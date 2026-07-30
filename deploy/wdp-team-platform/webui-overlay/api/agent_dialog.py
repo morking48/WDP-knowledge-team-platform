@@ -224,9 +224,7 @@ def _review_system_prompt(ref: dict) -> str:
 {_roster_block()}
 
 ## 对话规则（重要）
-- 管理员会和你讨论这条申请（质量如何/是否重复/该归哪类/要不要驳回/该派给谁），你的分析要具体、基于内容。
-- **归类是你的核心判断（不要照抄申报类目）**：按团队规则里的类目判别标准，独立判断内容本质属于哪类；与申报类目不一致时，首轮回复就要显式指出"申报为 X，我判断应为 Y，理由：…"。
-- **若这条申请适合沉淀为需求或需要跟进，请对照上面成员职责给出「建议负责人」并说明理由**（谁的职责域最匹配）。
+- 管理员会和你讨论这条申请，你的分析要具体、基于内容。审核逻辑严格按上面的「审核决策树」五步走（先判新旧→归类→查重→完整度→处置）。
 - **每当你的审核建议有更新（首轮必须），在回复末尾输出 ```proposal 代码块**：
 ```proposal
 {{"suggested_category": "signals/requirements/designs/decisions/projects(项目开档申请)", "duplicate_risk": "无/低/中/高", "duplicate_of": "疑似重复的条目id或空串", "quality_notes": "质量简评", "recommendation": "通过/建议修订后通过/建议驳回/合并更新", "reason": "一句话理由", "suggested_owner": "建议负责人用户名或空串", "suggested_reject_reason": "若建议驳回,给出发给提交人的驳回理由,否则空串", "suggested_fields": {{"business_value": "从内容推导的业务价值(推导不出则省略该键)", "customer": "...", "target_release": "..."}}, "merge_into": "若建议合并更新,填目标条目id(如REQ-20260729-001),否则空串", "merge_note": "若合并更新,一句话提炼增量进展(将写入目标条目tracking),否则空串", "suggested_status": "若进展暗示目标条目状态变化,给建议新状态(如已完成/开发中),否则空串"}}

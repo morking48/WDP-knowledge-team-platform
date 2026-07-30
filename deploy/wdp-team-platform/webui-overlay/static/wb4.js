@@ -196,10 +196,22 @@ window.wbSignalToReq = async function(signalId){
   const members = await getMemberOptions(true);
   // 沉淀去向：公共需求池 / 某个已开档项目 / 新建项目并归入（信号可随时归类）
   let prjOptions = [];
+  let projects = [];
   try{
     const pj = await api('/api/knowledge/projects');
-    prjOptions = (pj.projects||[]).filter(p=>p.status!=='已结项')
-      .map(p=>({value:'prj:'+p.dir, label:`📦 项目：${p.title}（${p.customer||'—'}）`}));
+    projects = (pj.projects||[]).filter(p=>p.status!=='已结项');
+    prjOptions = projects.map(p=>({value:'prj:'+p.dir, label:`📦 项目：${p.title}（${p.customer||'—'}）`}));
+  }catch(_){}
+  // 项目归属预选：信号带 related_project 标记时，默认选中对应项目（agent 提交时标记的归属，
+  // 管理员不用靠记忆匹配——项目链路的关键衔接点）
+  let defDest = 'pool';
+  try{
+    const it = await api('/api/knowledge/item?type=signals&id='+encodeURIComponent(signalId));
+    const rp = (it.item && it.item.related_project || '').trim();
+    if(rp){
+      const hit = projects.find(p => p.title===rp || p.dir===rp || (p.title||'').includes(rp) || rp.includes(p.title||''));
+      if(hit) defDest = 'prj:'+hit.dir;
+    }
   }catch(_){}
   const destOptions = [
     {value:'pool', label:'📋 公共需求池'},
@@ -207,7 +219,7 @@ window.wbSignalToReq = async function(signalId){
     {value:'__new__', label:'＋ 新建项目并归入（项目信号，项目还没建）'},
   ];
   const form = await wbForm('沉淀为需求', [
-    {key:'dest', label:'沉淀去向', type:'select', value:'pool', options:destOptions},
+    {key:'dest', label:'沉淀去向'+(defDest!=='pool'?'（已按信号的项目归属预选）':''), type:'select', value:defDest, options:destOptions},
     {key:'priority', label:'需求优先级（仅公共需求池用）', type:'select', value:'P2', options:['P0','P1','P2','P3']},
     {key:'owner', label:'分配负责人', type:'select', value:'待分配', options:members},
   ], {icon:'📋', okText:'下一步'});
