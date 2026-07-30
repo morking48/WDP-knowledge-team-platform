@@ -108,7 +108,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--title', required=True, help='入库标题')
     ap.add_argument('--category', default='signals',
-                    choices=['signals', 'requirements', 'designs', 'decisions', 'projects'])
+                    choices=['signals', 'requirements', 'designs', 'projects'])
     ap.add_argument('--file', help='内容文件路径（md，含frontmatter）。不给则读 stdin')
     args = ap.parse_args()
 

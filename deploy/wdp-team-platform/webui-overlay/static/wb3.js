@@ -96,7 +96,7 @@ function _modeInjectedMessage(mode, msg){
   }
   if(mode === 'signal'){
     return `[沉淀入库模式·请按团队规范把原始信息清洗沉淀并提交入库审核]\n`
-      + `① 先按内容本质判类（不要一律当信号）：一手事实/线索→signals（按 skill「signal-intake」清洗）；明确诉求/待办→requirements；方案/设计文档→designs；已拍板结论→decisions；客户项目立项→projects。告诉我你的判类和理由。\n`
+      + `① 判类（只看阶段，不看细节定全没）：已在推进/已定要做的（有责任人·版本·验收·交付）→requirements；点名某项目的→标 related_project（项目没开档你可直接提开档申请 --category projects）；纯线索（没人接·没排期）→signals；设计只认设计模式产出或带文档链接。**没有"决策"类目，拍板结论并进对应需求**。告诉我你的判类和理由。\n`
       + `② 按判定类目的模板补全字段（价值字段两步策略：能推导的自己补，推导不了的一次问完我）。\n`
       + `③ 整理好后用 submit_review.py 提交入库审核（--category 用你判定的类目）。\n`
       + `原始信息：${msg}`;
@@ -270,6 +270,14 @@ window.wbChatResume = function(){
     const tr = $('#transcript');
     const target = S.node;
     if(!target || !tr || !tr.contains(target)){
+      // 防双气泡：补建前先清掉转录区里可能残留的旧流式占位节点
+      // （历史渲染和流式恢复的时序差会留下孤儿节点，不清就会出现同一轮两个回复气泡）
+      if(tr){
+        tr.querySelectorAll('.cmsg.ai').forEach(n=>{
+          const cc = n.querySelector('.cc');
+          if(cc && (cc.textContent.trim()==='思考中…' || cc.textContent.trim()==='' )) n.remove();
+        });
+      }
       const aiNode = appendMsg('assistant', '');
       const cc = aiNode.querySelector('.cc');
       if(S.answer){ cc.innerHTML = renderMd(S.answer); }
@@ -298,16 +306,17 @@ function syncChips(){
 let _draftMode = false;
 let _realSessCount = 0;   // 侧栏真实会话数（新建上限判断）
 // sid → 对话正文真实条数（过滤 tool/空占位后）。持久化到 localStorage：
-// 后端 message_count 是原始 len(messages)（含工具消息/空占位，严重偏大如 114 vs 13），
-// 打开过一次的会话记住真实条数，刷新/重进页面也显示一致。
+// 侧栏计数 = 气泡数（归组后），打开过一次的会话记住，刷新/重进页面也显示一致。
+// key 带版本 v2：口径从"过滤后消息数"改为"气泡数"，旧缓存作废重算，避免显示旧的偏大值。
 let _visibleCnt = {};
-try{ _visibleCnt = JSON.parse(localStorage.getItem('wb_visible_cnt') || '{}') || {}; }catch(_){ _visibleCnt = {}; }
+try{ _visibleCnt = JSON.parse(localStorage.getItem('wb_visible_cnt_v2') || '{}') || {}; }catch(_){ _visibleCnt = {}; }
+try{ localStorage.removeItem('wb_visible_cnt'); }catch(_){}   // 清掉旧口径缓存
 function _saveVisibleCnt(){
   try{
     // 只保留最近 50 条，防止无限膨胀
     const keys = Object.keys(_visibleCnt);
     if(keys.length > 50){ keys.slice(0, keys.length-50).forEach(k=>delete _visibleCnt[k]); }
-    localStorage.setItem('wb_visible_cnt', JSON.stringify(_visibleCnt));
+    localStorage.setItem('wb_visible_cnt_v2', JSON.stringify(_visibleCnt));
   }catch(_){}
 }
 const _MAX_SESS = 10;     // 对话卡片上限
@@ -644,14 +653,8 @@ async function switchSession(sid){
         if(role === 'assistant') return !!c;   // 空 assistant（工具调用占位）丢弃
         return false;                          // tool / system 等一律不显示
       });
-      // 记录该会话的对话正文真实条数（供侧栏卡片计数用，修正后端把 tool/空占位也算进的口径）
-      _visibleCnt[sid] = shown.length;
-      _saveVisibleCnt();
-      const _cntEl = document.querySelector('#sessList .sess[data-sid="'+sid+'"] .sm');
-      if(_cntEl && !/回复中/.test(_cntEl.textContent)) _cntEl.textContent = shown.length + ' 条消息';
       // 视觉归组：连续的 assistant 消息（同一轮多步 agentic 执行，中间没有 user 打断）
       // 合并成一个气泡，跟实时流式观感一致——避免历史恢复时一轮任务散成一堆过程气泡。
-      // 最后一段是本轮"结论"，前面的中间步骤（确认位置/重试等）折叠弱化。
       const groups = [];
       for(const m of shown){
         if(m.role === 'user'){ groups.push({role:'user', parts:[(m.content||m.text||'')]}); }
@@ -661,13 +664,18 @@ async function switchSession(sid){
           else groups.push({role:'assistant', parts:[(m.content||m.text||'')]});
         }
       }
+      // 侧栏计数口径 = 气泡数（groups.length），和转录区实际渲染一致——
+      // 不用 shown.length（过滤后消息数），否则多步 agentic 会计数远大于肉眼气泡数。
+      _visibleCnt[sid] = groups.length;
+      _saveVisibleCnt();
+      const _cntEl = document.querySelector('#sessList .sess[data-sid="'+sid+'"] .sm');
+      if(_cntEl && !/回复中/.test(_cntEl.textContent)) _cntEl.textContent = groups.length + ' 条消息';
       tr.innerHTML = groups.map(g=>{
         if(g.role === 'user') return renderMsg('user', g.parts[0]);
         if(g.parts.length === 1) return renderMsg('assistant', g.parts[0]);
-        // 多步：最后一段为结论正常显示，前面 N 步折叠进「执行过程」
-        const steps = g.parts.slice(0, -1);
-        const finalPart = g.parts[g.parts.length - 1];
-        return renderAssistantGrouped(steps, finalPart);
+        // 方向A：同一轮的多段 agent 输出顺序拼成一个连续气泡（和实时观感一致），
+        // 不做折叠拆分——设计对话等场景的多段是连贯思考，连续展示更自然。
+        return renderAssistantGrouped(g.parts);
       }).join('')
         || '<div style="color:var(--ink-3);text-align:center;padding:20px">（空对话）</div>';
       tr.scrollTop = tr.scrollHeight;
@@ -733,12 +741,12 @@ async function onChatModelChange(e){
 }
 
 // ── 消息渲染 ──
-// 一轮多步 agent 执行归组渲染：中间步骤折叠进「执行过程」，最后一段为结论正常显示
-function renderAssistantGrouped(steps, finalPart){
-  const stepsHtml = steps.map(s=>`<div style="margin-bottom:6px;padding-bottom:6px;border-bottom:1px dashed var(--line-2)">${renderMd(s)}</div>`).join('');
-  const detail = `<details style="margin-bottom:8px"><summary style="cursor:pointer;color:var(--ink-3);font-size:12px;user-select:none">🔧 执行过程（${steps.length} 步）</summary><div style="margin-top:8px;padding:8px 10px;background:rgba(0,0,0,.02);border-radius:8px;font-size:12.5px;color:var(--ink-2)">${stepsHtml}</div></details>`;
+// 一轮多段 agent 输出归组：顺序拼进同一个气泡（方向A，和实时流式观感一致）。
+// 段落间留间距分隔，不折叠——连贯展示 agent 的思考推进。
+function renderAssistantGrouped(parts){
+  const body = parts.map((p,i)=>`<div${i>0?' style="margin-top:10px"':''}>${renderMd(p)}</div>`).join('');
   return `<div class="cmsg ai"><div class="cav">AI</div><div class="cb">
-    <div class="cn">你的 agent</div><div class="cc">${detail}${renderMd(finalPart)}</div>
+    <div class="cn">你的 agent</div><div class="cc">${body}</div>
     <div class="msg-acts"><button data-mact="copy" title="复制">📋 复制</button><button data-mact="retry" title="用上一条消息重新发送">🔄 重试</button></div></div></div>`;
 }
 

@@ -6233,8 +6233,10 @@ def handle_post(handler, parsed) -> bool:
                     owner=body.get("owner") or "")
             elif p == "/api/knowledge/project-update":
                 from api import projects as _prj
+                _exp = body.get("expect")
                 res = _prj.update_project_field(
-                    body.get("project") or "", body.get("field") or "", body.get("value") or "", admin)
+                    body.get("project") or "", body.get("field") or "", body.get("value") or "", admin,
+                    expect=_exp if _exp is not None else None)
             elif p == "/api/knowledge/project-req-update":
                 from api import projects as _prj
                 res = _prj.update_project_req(

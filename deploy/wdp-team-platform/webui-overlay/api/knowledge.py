@@ -384,6 +384,34 @@ def get_stats() -> dict:
         }
         stats['total'] += len(items)
         stats['active_total'] += len(active)
+    # 项目子分区（PREQ 项目需求 / DLV 交付材料）计入对应统计——
+    # 项目档案本身不单列统计（项目是容器），但项目下属的需求/材料要算进来。
+    try:
+        root = get_knowledge_root()
+        if root:
+            projects_dir = root / get_categories().get('projects', 'projects')
+            preq_n = dlv_n = 0
+            if projects_dir.is_dir():
+                for pdir in projects_dir.iterdir():
+                    if not pdir.is_dir() or pdir.name.startswith('_'):
+                        continue
+                    rq = pdir / 'requirements'
+                    dl = pdir / 'deliverables'
+                    if rq.is_dir():
+                        preq_n += len([f for f in rq.glob('*.md') if not f.name.startswith('_')])
+                    if dl.is_dir():
+                        dlv_n += len([f for f in dl.glob('*.md') if not f.name.startswith('_')])
+            # PREQ 计入需求统计（项目需求也是需求，工作台「需求」badge 应包含）
+            if 'requirements' in stats['categories']:
+                stats['categories']['requirements']['count'] += preq_n
+                stats['categories']['requirements']['active_count'] += preq_n
+                stats['categories']['requirements']['project_req_count'] = preq_n
+            stats['total'] += preq_n + dlv_n
+            stats['active_total'] += preq_n + dlv_n
+            stats['project_requirements'] = preq_n
+            stats['project_deliverables'] = dlv_n
+    except Exception as e:
+        logger.debug('get_stats project sub-count failed: %s', e)
     return stats
 
 

@@ -239,7 +239,8 @@ window.wbSignalToReq = async function(signalId){
     ], {icon:'📦', okText:'开档并沉淀'});
     if(!pf) return;
     try{
-      const pr = await api('/api/knowledge/project-create', {method:'POST', body:JSON.stringify(pf)});
+      const pr = await wbCreateProjectSafe(pf);
+      if(!pr){ return; }
       if(!pr.dir){ toast('开档失败', true); return; }
       pdir = pr.dir;
       toast('项目「'+(pf.title)+'」已开档');
@@ -1157,6 +1158,51 @@ async function wbOpenProject(pdir){
   const m = d.meta || {};
   document.getElementById('prjDetailTitle').textContent = '📦 ' + (m.title || pdir);
   document.getElementById('prjDetailMeta').textContent = `${m.customer||'—'} · ${m.phase||'—'} · 负责人 ${m.owner||'—'} · ${m.status||''}`;
+  // ✏️ 编辑项目信息（逐步补充/修改档案字段，带乐观锁防并发覆盖）
+  const _editBtn = document.getElementById('prjEditBtn');
+  if(_editBtn){
+    _editBtn.style.display = (window.__wb && window.__wb.IS_ADMIN) ? '' : 'none';
+    _editBtn.onclick = async ()=>{
+      const base = {customer:m.customer||'', phase:m.phase||'售前', owner:m.owner||'', status:m.status||'',
+                    opportunity:m.opportunity||'', bd_owner:m.bd_owner||'', tb_contact:m.tb_contact||'', description:m.description||''};
+      const form = await wbForm('编辑项目信息 · '+(m.title||pdir), [
+        {key:'customer', label:'客户', type:'text', value:base.customer},
+        {key:'phase', label:'阶段', type:'select', value:base.phase, options:['售前','交付中','售后']},
+        {key:'status', label:'状态', type:'text', value:base.status},
+        {key:'owner', label:'负责人', type:'text', value:base.owner},
+        {key:'opportunity', label:'商机号', type:'text', value:base.opportunity},
+        {key:'bd_owner', label:'BD 负责人', type:'text', value:base.bd_owner},
+        {key:'tb_contact', label:'客户 TB 对接人', type:'text', value:base.tb_contact},
+        {key:'description', label:'项目概述', type:'textarea', value:base.description},
+      ], {icon:'✏️', okText:'保存', width:520});
+      if(!form) return;
+      // 只提交改动的字段，每个带 expect（乐观锁）
+      let okN=0, conflicts=[];
+      for(const k of Object.keys(base)){
+        if((form[k]||'') === base[k]) continue;   // 未改
+        try{
+          await api('/api/knowledge/project-update', {method:'POST', body:JSON.stringify({
+            project:pdir, field:k, value:form[k]||'', expect:base[k]})});
+          okN++;
+        }catch(e){
+          if(e.data && e.data.error && e.data.error.indexOf('冲突')>=0){
+            conflicts.push(`${k}（已被改为「${e.data.current}」）`);
+          }else{ toast(`${k} 保存失败：${e.message}`, true); }
+        }
+      }
+      if(conflicts.length){
+        const ok = await wbConfirm(`以下字段期间被他人/agent 更新，你的修改基于旧值：\n${conflicts.join('\n')}\n\n是否用你的值强制覆盖？`);
+        if(ok){
+          for(const c of conflicts){
+            const k = c.split('（')[0];
+            try{ await api('/api/knowledge/project-update', {method:'POST', body:JSON.stringify({project:pdir, field:k, value:form[k]||''})}); okN++; }catch(_){}
+          }
+        }
+      }
+      if(okN) toast(`已更新 ${okN} 项`);
+      wbOpenProject(pdir);   // 重载详情
+    };
+  }
   // 需求表
   const reqs = d.requirements || [];
   document.getElementById('prjReqBadge').textContent = reqs.length;
@@ -1214,11 +1260,27 @@ async function prjCreate(){
   ]);
   if(!f) return;
   try{
-    const r = await api('/api/knowledge/project-create', {method:'POST', body:JSON.stringify(f)});
+    const r = await wbCreateProjectSafe(f);
+    if(!r) return;
     toast(r.message||'已开档');
     window.wbLoadProjects();
   }catch(e){ toast('开档失败：'+e.message, true); }
 }
+
+// 带客户级去重确认的开档：命中同客户已有项目时先问，确认另开才 force
+window.wbCreateProjectSafe = async function(body){
+  try{
+    return await api('/api/knowledge/project-create', {method:'POST', body:JSON.stringify(body)});
+  }catch(e){
+    if(e.status===409 && e.data && e.data.code==='CUSTOMER_HAS_PROJECT'){
+      const list = (e.data.existing||[]).map(p=>`· ${p.title}（${p.phase||'—'}）`).join('\n');
+      const ok = await wbConfirm(`客户「${e.data.customer}」已有项目：\n${list}\n\n确定要为该客户【另开一个新项目】吗？\n（如果需求属于已有项目，请点取消，改把需求归到已有项目）`);
+      if(!ok) return null;
+      return await api('/api/knowledge/project-create', {method:'POST', body:JSON.stringify({...body, force:true})});
+    }
+    throw e;
+  }
+};
 
 // 从公共信号池沉淀为本项目的项目需求
 async function prjSigToReq(pdir){

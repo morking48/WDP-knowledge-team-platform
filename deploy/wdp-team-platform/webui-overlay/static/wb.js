@@ -140,6 +140,9 @@ const VIEWS = {chat:'#viewChat',board:'#viewBoard',review:'#viewReview',members:
 const LOADED = {};
 
 function show(v){
+  // 软拦截：管理端视图对非 admin 关门（后端数据 API 本就有 admin 鉴权兜底，这里只防成员手动切进空壳页）
+  const ADMIN_VIEWS = ['review','members','teamagent'];
+  if(ADMIN_VIEWS.includes(v) && !IS_ADMIN){ v = 'board'; }
   Object.values(VIEWS).forEach(s => { const el=$(s); if(el) el.classList.add('hidden'); });
   const el = $(VIEWS[v]); if(el) el.classList.remove('hidden');
   $$('.rail-btn[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view===v));

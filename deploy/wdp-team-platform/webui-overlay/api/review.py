@@ -288,7 +288,9 @@ def merge_update(profile: str, fname: str, merge_into: str, merge_note: str,
 # ── 通过入库（admin）───────────────────────────────────────────────────────
 def approve(profile: str, fname: str, final_name: str | None,
             final_category: str | None, admin_note: str, admin_user: str,
-            extra_fields: dict | None = None) -> ApiResult:
+            extra_fields: dict | None = None,
+            target_pool: str | None = None,
+            target_project: str | None = None) -> ApiResult:
     """通过：移文件到 knowledge/<cat>/<final_name>.md，git commit，inbox 归档。
 
     extra_fields: 审核时补充的 frontmatter 字段（如设计的 designer/target_release），
@@ -310,6 +312,66 @@ def approve(profile: str, fname: str, final_name: str | None,
     if not target_name.endswith('.md'):
         target_name += '.md'
 
+    # ── 需求入库去向：公共需求池 or 项目需求池（PREQ）──
+    #    显式 target_pool 优先；未指定时回落到内容里的 related_project 自动判断。
+    if category == 'requirements':
+        rp = target_project or ''
+        if not rp:
+            try:
+                m = re.match(r'^---\s*\n(.*?)\n---', content, re.DOTALL)
+                if m:
+                    for line in m.group(1).splitlines():
+                        if line.strip().startswith('related_project:'):
+                            rp = line.split(':', 1)[1].split('#')[0].strip().strip('"\'')
+                            break
+            except Exception:
+                pass
+        # 明确要进项目池（target_pool=project），或未指定但带了项目归属
+        want_project = (target_pool == 'project') or (target_pool is None and bool(rp))
+        if want_project and rp:
+            from api import projects as _prj
+            pdir = _prj.project_dir_by_name(rp)
+            if not pdir:
+                # 项目未开档 → 结构化告警（不静默退公共池），让前端引导开档或改公共池
+                return {'error': f'项目「{rp}」未开档，项目需求无法入库',
+                        'code': 'PROJECT_NOT_FOUND', 'project_name': rp,
+                        'hint': '请先为该项目开档，或改入公共需求池'}, 409
+            res = _prj.submit_to_project_req(pdir, content, meta, admin_user,
+                                             owner=(extra_fields or {}).get('owner', ''),
+                                             priority=(extra_fields or {}).get('priority', ''))
+            if isinstance(res, tuple):
+                return res
+            # inbox 归档 + 通知
+            try:
+                inbox = _user_inbox(profile)
+                if inbox is not None:
+                    archive = inbox.parent / ARCHIVE_DIRNAME / time.strftime('%Y%m%d-%H%M%S')
+                    archive.mkdir(parents=True, exist_ok=True)
+                    if (inbox / fname).exists():
+                        shutil.move(str(inbox / fname), str(archive / fname))
+                    meta['status'] = 'approved'
+                    meta['resolved_at'] = time.strftime('%Y-%m-%d %H:%M:%S')
+                    mf = inbox / (fname + '.meta.json')
+                    if mf.exists():
+                        (archive / (fname + '.meta.json')).write_text(
+                            json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
+                        mf.unlink()
+            except Exception as e:
+                logger.warning('project-req approve archive failed: %s', e)
+            try:
+                from api import knowledge_ops as _ops
+                if meta.get('username'):
+                    _ops.notify_member(meta['username'],
+                                       f'✅ 你的提交「{meta.get("title","")}」已入库为项目「{pdir}」需求 {res.get("id","")}', admin_user)
+            except Exception:
+                pass
+            try:
+                from api.agent_dialog import purge_dialog_by_ref
+                purge_dialog_by_ref('review', {'user': profile, 'file': fname})
+            except Exception:
+                pass
+            return res
+
     # ── 项目开档申请：不平铺写文件，走 projects.create_project 建目录结构 ──
     if category == 'projects':
         fm = {}
@@ -324,6 +386,48 @@ def approve(profile: str, fname: str, final_name: str | None,
         except Exception:
             pass
         from api import projects as _prj
+        # 项目信息更新（逐步补充）：related_project/title 命中已开档项目 → 更新档案而非新建
+        _pname = fm.get('related_project') or fm.get('title') or ''
+        _existing = _prj.project_dir_by_name(_pname) if _pname else ''
+        if _existing:
+            updated = []
+            for _f in ('customer', 'phase', 'owner', 'description', 'opportunity',
+                       'bd_owner', 'tb_contact', 'background', 'status'):
+                _v = fm.get(_f, '').strip()
+                if _v:
+                    r = _prj.update_project_field(_existing, _f, _v, admin_user)
+                    if not isinstance(r, tuple):
+                        updated.append(_f)
+            # 归档源提交 + 通知 + 清对话
+            try:
+                inbox = _user_inbox(profile)
+                if inbox is not None:
+                    archive = inbox.parent / ARCHIVE_DIRNAME / time.strftime('%Y%m%d-%H%M%S')
+                    archive.mkdir(parents=True, exist_ok=True)
+                    if (inbox / fname).exists():
+                        shutil.move(str(inbox / fname), str(archive / fname))
+                    meta['status'] = 'approved'
+                    mf = inbox / (fname + '.meta.json')
+                    if mf.exists():
+                        (archive / (fname + '.meta.json')).write_text(
+                            json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
+                        mf.unlink()
+            except Exception as e:
+                logger.warning('project-update approve archive failed: %s', e)
+            try:
+                from api import knowledge_ops as _ops
+                if meta.get('username'):
+                    _ops.notify_member(meta['username'],
+                                       f'✅ 你提交的项目「{_existing}」信息更新已入库（{", ".join(updated) or "无变化"}）', admin_user)
+            except Exception:
+                pass
+            try:
+                from api.agent_dialog import purge_dialog_by_ref
+                purge_dialog_by_ref('review', {'user': profile, 'file': fname})
+            except Exception:
+                pass
+            return {'ok': True, 'category': 'projects', 'project': _existing,
+                    'updated_fields': updated, 'message': f'项目「{_existing}」档案已更新'}
         res = _prj.create_project({
             'dir': fm.get('title') or target_name[:-3],
             'title': fm.get('title') or target_name[:-3],
@@ -545,7 +649,10 @@ def handle_review_submit(handler, body):
     if category and category not in _kb.get_categories():
         return {'error': f'非法类目 {category}'}, 400
     # 模板校验：按分区 required_fields 检查 frontmatter（触点1：成员提交时）
-    if category:
+    # 例外：项目信息更新（update_type: project_info）不走开档的完整字段校验——
+    #       它是对已开档项目的字段补充，只要能定位到项目 + 有更新内容即可。
+    _is_prj_update = category == 'projects' and 'update_type: project_info' in content
+    if category and not _is_prj_update:
         vr = _kb.validate_against_template(category, content)
         if not vr['ok']:
             return {'error': vr['message'], 'missing': vr['missing'], 'stage': 'submit'}, 422
@@ -574,7 +681,9 @@ def handle_review_approve(handler, body):
     if not profile or not fname:
         return {'error': '缺参数'}, 400
     return approve(profile, fname, final_name, final_category, note, u['username'],
-                   extra_fields=extra)
+                   extra_fields=extra,
+                   target_pool=(body.get('target_pool') or '').strip() or None,
+                   target_project=(body.get('target_project') or '').strip() or None)
 
 
 def handle_review_reject(handler, body):

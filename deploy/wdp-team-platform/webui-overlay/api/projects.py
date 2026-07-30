@@ -149,6 +149,22 @@ def create_project(body: dict, creator: str) -> ApiResult:
     if (d / 'project.md').is_file():
         return {'error': f'项目「{pdir}」已存在'}, 409
     customer = (body.get('customer') or '').strip() or '待补充'
+    # 客户级软去重：同一客户已有项目时，除非显式 force，提示已有项目防冗余开档
+    if customer and customer != '待补充' and not body.get('force'):
+        existing = []
+        try:
+            for p in root.glob('*/project.md'):
+                m = _parse_fm(p.read_text(encoding='utf-8'))
+                if (m.get('customer') or '').strip() == customer:
+                    existing.append({'dir': p.parent.name, 'title': m.get('title', p.parent.name),
+                                     'phase': m.get('phase', '')})
+        except Exception:
+            pass
+        if existing:
+            return {'error': f'客户「{customer}」已有 {len(existing)} 个项目，确认要另开新项目吗？',
+                    'code': 'CUSTOMER_HAS_PROJECT', 'customer': customer,
+                    'existing': existing,
+                    'hint': '若确为不同项目，重试时带 force=true；否则请把需求归到已有项目'}, 409
     phase = (body.get('phase') or '售前').strip()
     owner = (body.get('owner') or creator or '待分配').strip()
     desc = (body.get('description') or '').strip() or f'{customer} 项目'
@@ -239,26 +255,123 @@ def get_project(pdir: str) -> ApiResult:
             'requirements': reqs, 'deliverables': dlvs}
 
 
-def update_project_field(pdir: str, field: str, value: str, admin: str) -> ApiResult:
-    """改项目档案 frontmatter 字段（phase/owner/status 流转）。"""
-    allowed = {'phase', 'owner', 'status', 'customer', 'description'}
+def update_project_field(pdir: str, field: str, value: str, admin: str,
+                         expect: str | None = None) -> ApiResult:
+    """改项目档案 frontmatter 字段。支持逐步补充（字段不存在则新增）+ 乐观锁。
+
+    expect 传入时做乐观锁：若档案里该字段现值 != expect（期间被别人改过），返回 409 冲突，
+    附当前值让调用方决定是否覆盖——不锁卡片、不阻塞并发，只在真冲突时提示。
+    """
+    allowed = {'phase', 'owner', 'status', 'customer', 'description',
+               'opportunity', 'bd_owner', 'tb_contact', 'background', 'title'}
     if field not in allowed:
         return {'error': f'不允许修改字段 {field}'}, 400
     pm = _projects_root() / pdir / 'project.md'
     if not pm.is_file():
         return {'error': '项目不存在'}, 404
     text = pm.read_text(encoding='utf-8')
-    new_text, n = re.subn(rf'(^{field}:).*$', rf'\1 {value}', text, count=1, flags=re.MULTILINE)
-    if n == 0:
-        return {'error': f'档案缺少 {field} 字段'}, 422
+    # 读现值（乐观锁校验用）
+    cur_m = re.search(rf'^{field}:(.*)$', text, flags=re.MULTILINE)
+    cur_val = (cur_m.group(1).strip().strip('"\'') if cur_m else '')
+    if expect is not None and cur_val != expect.strip():
+        return {'error': '冲突：该字段已被更新', 'current': cur_val,
+                'your_base': expect, 'field': field}, 409
+    if cur_m:
+        new_text = re.sub(rf'(^{field}:).*$', rf'\1 {value}', text, count=1, flags=re.MULTILINE)
+    else:
+        # 逐步补充：字段原本不存在 → 插到 frontmatter 末尾（--- 前）
+        m2 = re.match(r'^(---\s*\n.*?)(\n---)', text, re.DOTALL)
+        if not m2:
+            return {'error': '档案 frontmatter 格式异常'}, 422
+        new_text = m2.group(1) + f'\n{field}: {value}' + text[m2.end(1):]
     pm.write_text(new_text, encoding='utf-8')
     _git_commit(f'项目 {pdir}: {field} → {value} by {admin}')
-    return {'ok': True}
+    return {'ok': True, 'field': field, 'value': value}
 
 
 # ══════════════════════════════════════════════════════════════════
 #  项目需求（含 信号 → 项目需求 沉淀）
 # ══════════════════════════════════════════════════════════════════
+
+def submit_to_project_req(pdir: str, content: str, meta: dict, admin_user: str,
+                          owner: str = '', priority: str = '') -> ApiResult:
+    """审核入库时：把一条'带项目归属的需求'直接落进 projects/<pdir>/requirements/（PREQ）。
+    不经过公共池——related_project 命中已开档项目时的直路。"""
+    from api import knowledge as _kb
+    d = _projects_root() / pdir
+    if not (d / 'project.md').is_file():
+        return {'error': f'项目 {pdir} 未开档'}, 404
+    # 解析提交内容的 frontmatter（title/description/priority/owner）
+    fm, body = {}, content
+    try:
+        m = re.match(r'^---\s*\n(.*?)\n---\s*\n?(.*)$', content, re.DOTALL)
+        if m:
+            for line in m.group(1).splitlines():
+                if ':' in line and not line.strip().startswith('#'):
+                    k, v = line.split(':', 1)
+                    fm[k.strip()] = v.split('#')[0].strip().strip('"\'')
+            body = m.group(2)
+    except Exception:
+        pass
+    preq_id = _next_id('PREQ', [_projects_root()])
+    today = time.strftime('%Y-%m-%d')
+    title = fm.get('title') or meta.get('title', '(待补充)')
+    desc = (fm.get('description') or title)[:120]
+    prio = priority or fm.get('priority') or '中'
+    own = owner or fm.get('owner') or '待分配'
+    preq = f"""---
+id: {preq_id}
+type: project_requirement
+date: {today}
+title: {title}
+description: {desc}
+project: {pdir}
+status: {fm.get('status', '待评估')}
+priority: {prio}
+owner: {own}
+---
+
+{body.strip()}
+
+## 备注
+由 {admin_user} 审核入库为项目「{pdir}」需求 · {today}
+"""
+    fname = f'{today}-{preq_id}.md'
+    try:
+        (d / 'requirements').mkdir(parents=True, exist_ok=True)
+        (d / 'requirements' / fname).write_text(preq, encoding='utf-8')
+    except Exception as e:
+        return {'error': f'写入失败: {e}'}, 500
+    if own and own not in ('待分配', '未分配', ''):
+        try:
+            from api.knowledge_ops import notify_member
+            notify_member(own, f'项目「{pdir}」需求 {preq_id}「{title}」已分配给你，请跟进', admin_user)
+        except Exception:
+            pass
+    _git_commit(f'审核入库 → 项目需求 {preq_id} ({pdir}) by {admin_user}')
+    return {'ok': True, 'id': preq_id, 'project': pdir,
+            'final_path': f'projects/{pdir}/requirements/{fname}',
+            'message': f'已入库为项目「{pdir}」的需求 {preq_id}'}
+
+
+def project_dir_by_name(name: str) -> str:
+    """按项目名/客户名模糊匹配已开档项目，返回 dir（找不到返回空串）。"""
+    if not name:
+        return ''
+    name = name.strip()
+    try:
+        for p in _projects_root().glob('*/project.md'):
+            meta, _ = __import__('api.knowledge', fromlist=['parse_frontmatter']).parse_frontmatter(
+                p.read_text(encoding='utf-8'))
+            pdir = p.parent.name
+            if name in (pdir, meta.get('title', ''), meta.get('customer', '')) \
+               or name in pdir or pdir in name \
+               or (meta.get('title') and (name in meta['title'] or meta['title'] in name)):
+                return pdir
+    except Exception:
+        pass
+    return ''
+
 
 def signal_to_project_req(signal_id: str, pdir: str, admin_user: str,
                           owner: str = '') -> ApiResult:

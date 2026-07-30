@@ -104,43 +104,95 @@ function bindReviewActions(){
 async function doApprove(){
   if(!_rvSel){ toast('请先选择待审项', true); return; }
   const sug = _rvSel.suggestion || {};
-  // 归类：默认选中 AI 建议类目 / 申报类目（成员提交时的类别）
   const defCat = sug.target_category || _rvSel.category || 'signals';
   const catOpts = [
-    {value:'signals', label:'信号 signals'},
-    {value:'requirements', label:'需求 requirements'},
-    {value:'designs', label:'产品设计 designs'},
-    {value:'decisions', label:'决策 decisions'},
-    {value:'projects', label:'项目开档 projects'},
+    {value:'signals', label:'📥 信号池 signals'},
+    {value:'requirements', label:'📋 公共需求池 requirements'},
+    {value:'req_project', label:'📦 项目需求池（归到某项目下 PREQ）'},
+    {value:'designs', label:'📐 设计池 designs'},
+    {value:'projects', label:'📦 项目开档 projects'},
   ];
-  const form = await wbForm('通过入库', [
-    {key:'category', label:'归类到哪个池', type:'select', value:defCat, options:catOpts},
+  // AI 若建议了项目归属，默认选项目需求池
+  const sugProject = (sug.suggested_fields && sug.suggested_fields.related_project) || '';
+  const defPool = (defCat === 'requirements' && sugProject) ? 'req_project' : defCat;
+  // 拉已开档项目列表（供项目需求池选择）
+  let prjOpts = [];
+  try{
+    const pj = await api('/api/knowledge/projects');
+    prjOpts = (pj.projects||[]).filter(p=>p.status!=='已结项').map(p=>({value:p.dir, label:`${p.title}（${p.customer||'—'}）`}));
+  }catch(_){}
+  const fields = [
+    {key:'category', label:'入库去向', type:'select', value:defPool, options:catOpts},
+  ];
+  if(prjOpts.length){
+    fields.push({key:'target_project', label:'选择项目（仅"项目需求池"时生效）', type:'select',
+      value: sugProject && prjOpts.find(o=>o.label.includes(sugProject)) ? prjOpts.find(o=>o.label.includes(sugProject)).value : (prjOpts[0]&&prjOpts[0].value||''),
+      options:prjOpts});
+  }
+  fields.push(
     {key:'final_name', label:'最终文件名（.md 结尾）', type:'text', value: sug.suggested_name || _rvSel.file, required:true},
-    {key:'designer', label:'设计人（仅归类为设计时生效，可空）', type:'text', value:'', placeholder:'如：张三'},
-    {key:'target_release', label:'目标版本（仅设计/需求生效，可空）', type:'text', value:'', placeholder:'如：5.17'},
+    {key:'designer', label:'设计人（仅设计时生效，可空）', type:'text', value:''},
+    {key:'target_release', label:'目标版本（仅设计/需求生效，可空）', type:'text', value:''},
     {key:'note', label:'审核备注（可选）', type:'textarea', value:''},
-  ], {icon:'📥', okText:'通过入库'});
+  );
+  const form = await wbForm('通过入库', fields, {icon:'📥', okText:'通过入库', width:520});
   if(!form) return;
   if(!form.final_name){ toast('文件名必填', true); return; }
+  // 解析入库去向 → category + target_pool + target_project
+  let category = form.category, target_pool = null, target_project = null;
+  if(form.category === 'req_project'){
+    category = 'requirements'; target_pool = 'project'; target_project = form.target_project || '';
+    if(!target_project){ toast('请选择目标项目', true); return; }
+  } else if(form.category === 'requirements'){
+    target_pool = 'public';   // 明确公共池
+  }
+  const extra = {};
+  if((form.designer||'').trim()) extra.designer = form.designer.trim();
+  if((form.target_release||'').trim()) extra.target_release = form.target_release.trim();
+  const doIt = ()=>api('/api/review/approve', {method:'POST', body:JSON.stringify({
+    user:_rvSel._profile, file:_rvSel.file, final_name:form.final_name, final_category:category,
+    target_pool, target_project, note:form.note||'', extra_fields: extra})});
   try{
-    const extra = {};
-    if((form.designer||'').trim()) extra.designer = form.designer.trim();
-    if((form.target_release||'').trim()) extra.target_release = form.target_release.trim();
-    const d = await api('/api/review/approve', {method:'POST', body:JSON.stringify({
-      user:_rvSel._profile, file:_rvSel.file, final_name:form.final_name, final_category:form.category, note:form.note||'',
-      extra_fields: extra
-    })});
-    toast('已入库到 '+(d.final_path||''));
-    // 记录审核决策供 few-shot 学习（基础入口无 AI 分析，ai_advice 留空；对话版审核才带 AI 建议）
+    const d = await doIt();
+    toast(d.message || ('已入库到 '+(d.final_path||'')));
     api('/api/admin/team-agent/record-decision', {method:'POST', body:JSON.stringify({
-      kind:'review', entry:{title:_rvSel.title, category:form.category, decision:'通过',
-        ai_advice:'', reason:form.note||''}
-    })}).catch(()=>{});
-    W.LOADED.board = false; if(window.wbRefreshRailCnt)window.wbRefreshRailCnt();  // 工作台需刷新
+      kind:'review', entry:{title:_rvSel.title, category:category, decision:'通过', ai_advice:'', reason:form.note||''}})}).catch(()=>{});
+    W.LOADED.board = false; if(window.wbRefreshRailCnt)window.wbRefreshRailCnt();
     window.loadReview();
   }catch(e){
-    // 模板校验失败（422）用 alert 醒目提示，其它错误用 toast
-    if(e.status === 422 || (e.data && e.data.missing)){
+    // 项目未开档 → 引导开档或改公共池
+    if(e.status===409 && e.data && e.data.code==='PROJECT_NOT_FOUND'){
+      const pn = e.data.project_name||'该项目';
+      const go = await wbConfirm(`项目「${pn}」还没开档，项目需求无法入库。\n\n点「确定」现在为它开档（填最简信息），点「取消」改入公共需求池。`);
+      if(go){
+        const pf = await wbForm('为「'+pn+'」开档', [
+          {key:'customer', label:'客户名称', type:'text', value:pn, required:true},
+          {key:'phase', label:'阶段', type:'select', value:'售前', options:['售前','交付中','售后']},
+          {key:'description', label:'项目概述', type:'textarea', value:''},
+        ], {icon:'📦', okText:'开档并入库需求'});
+        if(!pf) return;
+        try{
+          const pr = await wbCreateProjectSafe({title:pn, customer:pf.customer, phase:pf.phase, description:pf.description});
+          if(!pr){ return; }
+          if(!pr.dir){ toast('开档失败', true); return; }
+          target_project = pr.dir;
+          const d2 = await api('/api/review/approve', {method:'POST', body:JSON.stringify({
+            user:_rvSel._profile, file:_rvSel.file, final_name:form.final_name, final_category:'requirements',
+            target_pool:'project', target_project, note:form.note||'', extra_fields: extra})});
+          toast('项目已开档，'+(d2.message||'需求已入库'));
+          W.LOADED.board=false; if(window.wbRefreshRailCnt)window.wbRefreshRailCnt(); window.loadReview();
+        }catch(e2){ toast('开档/入库失败：'+e2.message, true); }
+      } else {
+        // 改入公共池
+        try{
+          const d3 = await api('/api/review/approve', {method:'POST', body:JSON.stringify({
+            user:_rvSel._profile, file:_rvSel.file, final_name:form.final_name, final_category:'requirements',
+            target_pool:'public', note:form.note||'', extra_fields: extra})});
+          toast('已改入公共需求池：'+(d3.final_path||''));
+          W.LOADED.board=false; if(window.wbRefreshRailCnt)window.wbRefreshRailCnt(); window.loadReview();
+        }catch(e3){ toast('入库失败：'+e3.message, true); }
+      }
+    } else if(e.status === 422 || (e.data && e.data.missing)){
       await wbAlert('⚠ 入库校验未通过\n\n'+(e.message||'')+'\n\n请让提交人在对话中补全 frontmatter 字段后重新提交。');
     } else {
       toast('入库失败：'+e.message, true);
