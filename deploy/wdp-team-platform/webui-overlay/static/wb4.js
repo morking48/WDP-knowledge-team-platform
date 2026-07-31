@@ -1166,6 +1166,30 @@ async function wbOpenProject(pdir){
   const _editBtn = document.getElementById('prjEditBtn');
   if(_editBtn){
     _editBtn.style.display = (window.__wb && window.__wb.IS_ADMIN) ? '' : 'none';
+    // 🗑 删除项目（admin，危险操作二次确认，软删除整个项目目录到归档）——动态插入到编辑按钮旁
+    if(window.__wb && window.__wb.IS_ADMIN){
+      let _delBtn = document.getElementById('prjDeleteBtn');
+      if(!_delBtn){
+        _delBtn = document.createElement('button');
+        _delBtn.id = 'prjDeleteBtn';
+        _delBtn.className = 'btn sm';
+        _delBtn.style.cssText = 'color:var(--danger);border-color:var(--danger);margin-left:6px';
+        _delBtn.textContent = '🗑 删除项目';
+        _editBtn.parentNode.insertBefore(_delBtn, _editBtn.nextSibling);
+      }
+      _delBtn.style.display = '';
+      _delBtn.onclick = async ()=>{
+        const ok = await wbConfirm(`确定删除项目「${m.title||pdir}」？\n\n将连同该项目下的全部需求(PREQ)和交付材料一起移入归档区，30天后自动彻底清理。此操作会影响关联追溯。`,
+          {danger:true, title:'⚠ 删除项目', okText:'删除', icon:'🗑'});
+        if(!ok) return;
+        try{
+          await api('/api/knowledge/project-delete', {method:'POST', body:JSON.stringify({project:pdir})});
+          toast('项目已删除（移入归档，30天后清理）');
+          if(window.wbLoadProjects) window.wbLoadProjects();   // 返回列表并刷新
+          if(window.wbRefreshRailCnt) window.wbRefreshRailCnt();
+        }catch(e){ toast('删除失败：'+e.message, true); }
+      };
+    }
     _editBtn.onclick = async ()=>{
       const base = {customer:m.customer||'', phase:m.phase||'售前', owner:m.owner||'', status:m.status||'',
                     opportunity:m.opportunity||'', bd_owner:m.bd_owner||'', tb_contact:m.tb_contact||'', description:m.description||''};

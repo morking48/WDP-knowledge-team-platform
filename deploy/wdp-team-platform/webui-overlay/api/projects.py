@@ -261,6 +261,35 @@ def get_project(pdir: str) -> ApiResult:
             'requirements': reqs, 'deliverables': dlvs}
 
 
+def delete_project(pdir: str, operator: str = 'admin') -> ApiResult:
+    """删除整个项目：软删除 projects/<pdir>/ 目录到 library/archive/_deleted/projects/。
+
+    项目是目录容器（project.md + requirements/ + deliverables/），不能走单文件的
+    archive_delete，需整目录移动。软删除保留 git 可追溯，30天后 cron 真删（与其它类目一致）。
+    """
+    import shutil
+    root = _projects_root().parent   # knowledge 根
+    d = _projects_root() / pdir
+    pm = d / 'project.md'
+    if not pm.is_file():
+        return {'error': f'项目不存在: {pdir}'}, 404
+    # 取项目名（用于提交信息）
+    try:
+        title = _parse_fm(pm.read_text(encoding='utf-8')).get('title', pdir)
+    except Exception:
+        title = pdir
+    arc_dir = root / 'library' / 'archive' / '_deleted' / 'projects'
+    arc_dir.mkdir(parents=True, exist_ok=True)
+    ts = time.strftime('%Y%m%d-%H%M%S')
+    dst = arc_dir / f'{ts}__{pdir}'
+    try:
+        shutil.move(str(d), str(dst))
+    except Exception as e:
+        return {'error': f'移动失败: {e}'}, 500
+    _git_commit(f'chore(projects): 删除项目「{title}」({pdir}) → 归档待清理 (by {operator})')
+    return {'ok': True, 'archived_to': str(dst.relative_to(root)).replace('\\', '/'), 'project': pdir}
+
+
 def update_project_field(pdir: str, field: str, value: str, admin: str,
                          expect: str | None = None) -> ApiResult:
     """改项目档案 frontmatter 字段。支持逐步补充（字段不存在则新增）+ 乐观锁。

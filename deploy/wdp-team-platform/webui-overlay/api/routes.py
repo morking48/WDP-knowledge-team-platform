@@ -6235,6 +6235,9 @@ def handle_post(handler, parsed) -> bool:
             elif p == "/api/knowledge/project-create":
                 from api import projects as _prj
                 res = _prj.create_project(body or {}, creator=admin)
+            elif p == "/api/knowledge/project-delete":
+                from api import projects as _prj
+                res = _prj.delete_project(body.get("project") or "", admin)
             elif p == "/api/knowledge/to-project-req":
                 from api import projects as _prj
                 res = _prj.signal_to_project_req(
