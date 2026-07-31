@@ -418,6 +418,37 @@ def get_stats() -> dict:
 
 
 # ── HTTP handler ─────────────────────────────────────────────────────────────
+def handle_knowledge_team(handler, parsed) -> dict:
+    """GET /api/knowledge/team —— 团队成员画像列表（扫 knowledge/team/*.md）。
+
+    team 不是 working 流转分区（不在 get_categories），是独立的成员画像目录，
+    所以单独处理：直接扫目录解析 frontmatter，返回 {items:[{name,department,role,...}]}。
+    此前后端漏了这个分支，成员切到「团队成员」页会报 404「未知 knowledge 子路径」。
+    """
+    root = get_knowledge_root()
+    if not root:
+        return {'items': []}
+    tdir = root / 'team'
+    if not tdir.is_dir():
+        return {'items': []}
+    items = []
+    for f in sorted(tdir.glob('*.md')):
+        if f.name.startswith('_'):   # 跳过 _template.md
+            continue
+        try:
+            meta, body = parse_frontmatter(f.read_text(encoding='utf-8'))
+        except Exception as e:
+            logger.warning('read team profile %s failed: %s', f, e)
+            continue
+        item = dict(meta)
+        item['_file'] = f.name
+        # 兜底：name 缺失时用文件名（去 .md）
+        if not item.get('name'):
+            item['name'] = f.stem
+        items.append(item)
+    return {'items': items}
+
+
 def handle_knowledge_list(handler, parsed, category: str):
     """GET /api/knowledge/<category>?status=xx&owner=xx&q=xx"""
     from urllib.parse import parse_qs

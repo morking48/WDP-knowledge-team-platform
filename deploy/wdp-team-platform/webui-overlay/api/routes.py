@@ -5368,6 +5368,9 @@ def handle_get(handler, parsed) -> bool:
         if sub == "library":
             from api import knowledge_ops as _ops
             return j(handler, _ops.list_library())
+        if sub == "team":
+            # 团队成员画像（成员切到「团队成员」页会调用）——此前漏了这个分支导致 404
+            return j(handler, _kb.handle_knowledge_team(handler, parsed))
         if sub in _kb.get_categories():
             return j(handler, _kb.handle_knowledge_list(handler, parsed, sub))
         return j(handler, {"error": "未知 knowledge 子路径"}, status=404)
