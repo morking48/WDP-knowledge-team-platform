@@ -5283,7 +5283,12 @@ def handle_get(handler, parsed) -> bool:
         if not _users.is_request_admin(handler):
             return j(handler, {"error": "需要管理员权限"}, status=403)
         from api import team_skills_admin as _ts
-        return j(handler, _ts.list_team_skills())
+        try:
+            return j(handler, _ts.list_team_skills())
+        except Exception as e:
+            # 生产卷权限问题(如 _drafts_dir mkdir 被拒)不该穿透 500——降级空列表+错误信息
+            logger.warning("list_team_skills failed: %s", e, exc_info=True)
+            return j(handler, {"skills": [], "_error": str(e)})
     if parsed.path == "/api/admin/team-agent/skill":
         from api import users as _users
         if not _users.is_request_admin(handler):
