@@ -53,6 +53,11 @@ def record_decision(kind: str, entry: dict) -> dict:
                 subprocess.run(['git', '-C', str(root), 'commit', '-m',
                                 f'chore(agent-sessions): {kind} 决策记录'],
                                capture_output=True, timeout=10)
+                try:
+                    from api.knowledge_ops import _git_push_async
+                    _git_push_async(root)
+                except Exception:
+                    pass
         except Exception:
             pass
         return {'ok': True}

@@ -236,12 +236,17 @@ def merge_update(profile: str, fname: str, merge_into: str, merge_note: str,
         text += (f"\n\n## 进展记录 {today}\n{note}\n\n"
                  f"> 来源：{meta.get('username','')} 提交「{meta.get('title','')}」（审核合并）\n")
         tpath.write_text(text, encoding='utf-8')
-        # git 提交
+        # git 提交 + 自动推远程（防只commit不push积压）
         subprocess.run(['git', '-C', str(root), 'add', str(tpath.relative_to(root))],
                        capture_output=True, text=True, timeout=10)
         subprocess.run(['git', '-C', str(root), 'commit', '-m',
                         f'chore({target_cat}): {merge_into} 合并进展更新（审核 {admin_user}）'],
                        capture_output=True, text=True, timeout=10)
+        try:
+            from api.knowledge_ops import _git_push_async
+            _git_push_async(root)
+        except Exception:
+            pass
     except Exception as e:
         return {'error': f'目标条目更新失败: {e}'}, 500
 
@@ -522,6 +527,11 @@ def approve(profile: str, fname: str, final_name: str | None,
                                 capture_output=True, text=True, timeout=10)
             if r2.returncode == 0:
                 git_msg = 'git 已提交'
+                try:
+                    from api.knowledge_ops import _git_push_async
+                    _git_push_async(kb_root)   # 自动推远程
+                except Exception:
+                    pass
             else:
                 git_msg = f'git commit 失败: {r2.stderr[:100]}'
         else:

@@ -401,7 +401,7 @@ def get_stats() -> dict:
                         preq_n += len([f for f in rq.glob('*.md') if not f.name.startswith('_')])
                     if dl.is_dir():
                         dlv_n += len([f for f in dl.glob('*.md') if not f.name.startswith('_')])
-            # PREQ 计入需求统计（项目需求也是需求，工作台「需求」badge 应包含）
+            # PREQ 计入需求统计（项目需求也是需求，工作台「需求」badge 含项目需求）
             if 'requirements' in stats['categories']:
                 stats['categories']['requirements']['count'] += preq_n
                 stats['categories']['requirements']['active_count'] += preq_n

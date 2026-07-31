@@ -61,7 +61,7 @@ def _body_of(text: str) -> str:
 
 
 def _git_commit(msg: str):
-    """写操作后 git commit（与 review.py 同模式，失败不阻塞）。"""
+    """写操作后 git commit + 自动 push（与 review.py 同模式，失败不阻塞）。"""
     import subprocess
     root = _projects_root().parent
     try:
@@ -69,6 +69,12 @@ def _git_commit(msg: str):
                        capture_output=True, timeout=15)
         subprocess.run(['git', 'commit', '-m', msg], cwd=str(root),
                        capture_output=True, timeout=15)
+        # commit 成功后自动推远程（后台静默，失败只记日志——防"只commit不push"积压）
+        try:
+            from api.knowledge_ops import _git_push_async
+            _git_push_async(root)
+        except Exception:
+            pass
     except Exception as e:
         logger.warning('projects git commit failed: %s', e)
     # 项目数据变了 → 实时刷新知识库索引（对话 agent 导航用）

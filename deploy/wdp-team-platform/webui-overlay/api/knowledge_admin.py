@@ -169,7 +169,15 @@ def handle_admin_knowledge_update(handler, body):
                 commit_msg += ' — ' + '; '.join(changed[:3])
             r2 = subprocess.run(['git', '-C', str(root), 'commit', '-m', commit_msg],
                                 capture_output=True, text=True, timeout=10)
-            git_msg = 'git 已提交' if r2.returncode == 0 else f'commit 失败: {r2.stderr[:100]}'
+            if r2.returncode == 0:
+                git_msg = 'git 已提交'
+                try:
+                    from api.knowledge_ops import _git_push_async
+                    _git_push_async(root)
+                except Exception:
+                    pass
+            else:
+                git_msg = f'commit 失败: {r2.stderr[:100]}'
         else:
             git_msg = f'add 失败: {r.stderr[:100]}'
     except Exception as e:

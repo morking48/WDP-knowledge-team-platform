@@ -30,6 +30,31 @@ from api import knowledge as _kb
 logger = logging.getLogger(__name__)
 
 
+def _git_push_async(root: Path) -> None:
+    """commit 后静默 push 到远程（后台线程，失败只记日志不阻塞入库）。
+
+    背景：知识库此前只有 commit 没有 push，本地/服务器积压上百 commit 而远程为空，
+    磁盘故障即丢失历史。这里 commit 成功后自动推远程。
+    - 后台线程执行：push 可能慢（网络）不影响入库主流程
+    - 失败只记日志：远程冲突/凭据问题不阻塞用户操作，运维可排查
+    - 凭据：本机走 Windows 凭据管理器；服务器需在 remote URL 或 git credential store
+      配 gitlab deploy token（最小推送权限，一次配置永久生效）
+    """
+    import threading
+    def _do():
+        try:
+            r = subprocess.run(['git', '-C', str(root), 'push'],
+                               capture_output=True, text=True, timeout=30)
+            if r.returncode != 0:
+                logger.warning('knowledge git push failed: %s', (r.stderr or r.stdout)[:200])
+        except Exception as e:
+            logger.warning('knowledge git push exception: %s', e)
+    try:
+        threading.Thread(target=_do, daemon=True).start()
+    except Exception as e:
+        logger.debug('git push thread start failed: %s', e)
+
+
 def _git_commit(root: Path, rel_path: str, msg: str) -> str:
     try:
         r = subprocess.run(['git', '-C', str(root), 'add', rel_path],
@@ -38,7 +63,10 @@ def _git_commit(root: Path, rel_path: str, msg: str) -> str:
             return f'git add 失败: {r.stderr[:80]}'
         r2 = subprocess.run(['git', '-C', str(root), 'commit', '-m', msg],
                             capture_output=True, text=True, timeout=10)
-        return 'git 已提交' if r2.returncode == 0 else f'commit 失败: {r2.stderr[:80]}'
+        if r2.returncode == 0:
+            _git_push_async(root)   # commit 成功后自动推远程（静默、不阻塞）
+            return 'git 已提交'
+        return f'commit 失败: {r2.stderr[:80]}'
     except Exception as e:
         return f'git 异常: {e}'
 
