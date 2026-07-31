@@ -281,6 +281,7 @@ def model_options() -> dict:
 # hermes-home/ 已 gitignore；部署时该文件在服务器持久化卷上，不进任何仓库。
 _SUPPORTED_INTEGRATIONS = {
     'feishu': ['app_id', 'app_secret'],
+    'wecom_mcp': ['apikey'],   # 企业微信文档 MCP 的 apikey（官方机器人 MCP 接入，团队共用一套）
 }
 
 
@@ -314,7 +315,7 @@ def get_team_integrations() -> dict:
         entry = {}
         for f in fields:
             val = cfg.get(f, '')
-            entry[f] = _mask_secret(val) if 'secret' in f else val
+            entry[f] = _mask_secret(val) if ('secret' in f or 'key' in f) else val
         entry['configured'] = bool(cfg.get(fields[0]) and cfg.get(fields[-1]))
         entry['updated_at'] = cfg.get('updated_at', '')
         out[prov] = entry
@@ -331,7 +332,7 @@ def save_team_integration(provider: str, values: dict) -> ApiResult:
     new = dict(cur)
     for f in fields:
         v = (values.get(f) or '').strip()
-        if 'secret' in f and (not v or '•' in v):
+        if ('secret' in f or 'key' in f) and (not v or '•' in v):
             continue
         new[f] = v
     new['updated_at'] = time.strftime('%Y-%m-%d %H:%M:%S')
