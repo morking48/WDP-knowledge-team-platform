@@ -5247,11 +5247,34 @@ def handle_get(handler, parsed) -> bool:
         if not _users.is_request_admin(handler):
             return j(handler, {"error": "需要管理员权限"}, status=403)
         from api import team_agent as _ta
-        res = _ta.get_team_agent()
-        res['model_options'] = _ta.model_options().get('providers', {})
-        res['published_at'] = _ta.get_publish_status()
-        res['snapshots'] = _ta.list_soul_snapshots()
-        res['integrations'] = _ta.get_team_integrations().get('integrations', {})
+        # 各子步骤独立容错：单项失败降级为空值，不让整个接口 500（团队Agent页全空的教训——
+        # 此前任何一步异常(如团队根权限/文件缺失)都会穿透成 500 "Internal server error"，无法定位）。
+        try:
+            res = _ta.get_team_agent()
+        except Exception as e:
+            logger.warning("get_team_agent failed: %s", e, exc_info=True)
+            res = {"soul": "", "provider": "", "model": "", "_error_team_agent": str(e)}
+        try:
+            res['model_options'] = _ta.model_options().get('providers', {})
+        except Exception as e:
+            logger.warning("model_options failed: %s", e)
+            res['model_options'] = {}
+        try:
+            res['published_at'] = _ta.get_publish_status()
+        except Exception as e:
+            res['published_at'] = ''
+        try:
+            res['snapshots'] = _ta.list_soul_snapshots()
+        except Exception as e:
+            logger.warning("list_soul_snapshots failed: %s", e)
+            res['snapshots'] = []
+            res['_error_snapshots'] = str(e)
+        try:
+            res['integrations'] = _ta.get_team_integrations().get('integrations', {})
+        except Exception as e:
+            logger.warning("get_team_integrations failed: %s", e)
+            res['integrations'] = {}
+            res['_error_integrations'] = str(e)
         return j(handler, res)
 
     # ── 团队 Skill 编辑（admin）──────────────────────────────────────
@@ -6205,7 +6228,8 @@ def handle_post(handler, parsed) -> bool:
         "/api/knowledge/merge", "/api/knowledge/to-requirement",
         "/api/knowledge/new-design", "/api/knowledge/notify",
         "/api/knowledge/new-decision", "/api/knowledge/delete-item",
-        "/api/knowledge/project-create", "/api/knowledge/to-project-req",
+        "/api/knowledge/project-create", "/api/knowledge/project-delete",
+        "/api/knowledge/to-project-req",
         "/api/knowledge/project-update", "/api/knowledge/project-req-update",
         "/api/knowledge/deliverable-create", "/api/knowledge/deliverable-update",
     ):
