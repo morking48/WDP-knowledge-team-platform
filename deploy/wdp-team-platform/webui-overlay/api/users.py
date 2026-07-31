@@ -307,7 +307,7 @@ def current_request_user(handler) -> dict | None:
     u = get_user(username)
     if not u:
         return None
-    return {k: u.get(k) for k in ('username', 'profile', 'role', 'active', 'created_at')}
+    return {k: u.get(k) for k in ('username', 'display_name', 'profile', 'role', 'active', 'created_at')}
 
 
 def is_request_admin(handler) -> bool:

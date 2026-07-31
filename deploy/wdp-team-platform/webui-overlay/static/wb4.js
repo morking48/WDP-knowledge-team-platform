@@ -821,7 +821,11 @@ window.wbLoadMine = async function(){
     });
   });
   box.innerHTML = '<div style="color:var(--ink-3);padding:12px">加载中…</div>';
-  const me = (window.__wb && window.__wb.USER && window.__wb.USER.username) || '';
+  // 「我的」身份匹配：一个人可能被以 username(admin) 或中文名(display_name/马冠杰) 记为 owner——
+  // 平台UI分配存 username，agent 提交按画像中文名存 owner，两种都要认，否则「我的」漏项。
+  const _u = (window.__wb && window.__wb.USER) || {};
+  const mineIds = [_u.username, _u.display_name].filter(Boolean);
+  const isMine = (v)=> v!=null && mineIds.includes(String(v).trim());
   const sec = (title, items, cols) => {
     if(!items.length) return '';
     return `<div style="margin-bottom:18px">
@@ -836,24 +840,24 @@ window.wbLoadMine = async function(){
     let html = '';
     if(_mineTab === 'signals'){
       const sig = await api('/api/knowledge/signals');
-      html = sec('📥 与我相关的信号', (sig.items||[]).filter(x=>x.assignee===me || x.submitted_by===me), ['status','urgency']);
+      html = sec('📥 与我相关的信号', (sig.items||[]).filter(x=>isMine(x.assignee) || isMine(x.submitted_by)), ['status','urgency']);
     }else if(_mineTab === 'requirements'){
       const req = await api('/api/knowledge/requirements');
-      html = sec('📋 我负责的需求', (req.items||[]).filter(x=>x.owner===me), ['status','priority']);
+      html = sec('📋 我负责的需求', (req.items||[]).filter(x=>isMine(x.owner)), ['status','priority']);
     }else if(_mineTab === 'designs'){
       const dsn = await api('/api/knowledge/designs');
-      html = sec('📐 我的设计稿', (dsn.items||[]).filter(x=>x.designer===me || x.reviewer===me), ['status']);
+      html = sec('📐 我的设计稿', (dsn.items||[]).filter(x=>isMine(x.designer) || isMine(x.reviewer)), ['status']);
     }else if(_mineTab === 'projects'){
       // 我负责的项目 + 我名下的项目需求
       const pj = await api('/api/knowledge/projects');
-      const myPrj = (pj.projects||[]).filter(x=>x.owner===me);
+      const myPrj = (pj.projects||[]).filter(x=>isMine(x.owner));
       html = sec('📦 我负责的项目', myPrj.map(x=>({...x, title:`${x.title}（${x.customer||'—'} · ${x.phase||'—'}）`})), ['status']);
       // 逐项目找我名下的项目需求（数量少，串行可接受）
       let myReqs = [];
       for(const p of (pj.projects||[])){
         try{
           const d = await api('/api/knowledge/project?dir='+encodeURIComponent(p.dir));
-          myReqs = myReqs.concat((d.requirements||[]).filter(r=>r.owner===me).map(r=>({...r, title:`[${p.title}] ${r.title||r.id}`})));
+          myReqs = myReqs.concat((d.requirements||[]).filter(r=>isMine(r.owner)).map(r=>({...r, title:`[${p.title}] ${r.title||r.id}`})));
         }catch(_){}
       }
       html += sec('📋 我名下的项目需求', myReqs, ['status','priority']);
