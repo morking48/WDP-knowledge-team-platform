@@ -105,47 +105,74 @@ async function doApprove(){
   if(!_rvSel){ toast('请先选择待审项', true); return; }
   const sug = _rvSel.suggestion || {};
   const defCat = sug.target_category || _rvSel.category || 'signals';
-  const catOpts = [
+  // 非需求类目仍可切换（信号/设计/项目开档），需求类目的公共/项目二选一改由标签页承载
+  const nonReqOpts = [
     {value:'signals', label:'📥 信号池 signals'},
-    {value:'requirements', label:'📋 公共需求池 requirements'},
-    {value:'req_project', label:'📦 项目需求池（归到某项目下 PREQ）'},
+    {value:'requirements', label:'📋 需求（公共/项目见标签页）'},
     {value:'designs', label:'📐 设计池 designs'},
     {value:'projects', label:'📦 项目开档 projects'},
   ];
-  // AI 若建议了项目归属，默认选项目需求池
   const sugProject = (sug.suggested_fields && sug.suggested_fields.related_project) || '';
-  const defPool = (defCat === 'requirements' && sugProject) ? 'req_project' : defCat;
   // 拉已开档项目列表（供项目需求池选择）
   let prjOpts = [];
   try{
     const pj = await api('/api/knowledge/projects');
     prjOpts = (pj.projects||[]).filter(p=>p.status!=='已结项').map(p=>({value:p.dir, label:`${p.title}（${p.customer||'—'}）`}));
   }catch(_){}
-  const fields = [
-    {key:'category', label:'入库去向', type:'select', value:defPool, options:catOpts},
-  ];
-  if(prjOpts.length){
-    fields.push({key:'target_project', label:'选择项目（仅"项目需求池"时生效）', type:'select',
-      value: sugProject && prjOpts.find(o=>o.label.includes(sugProject)) ? prjOpts.find(o=>o.label.includes(sugProject)).value : (prjOpts[0]&&prjOpts[0].value||''),
-      options:prjOpts});
+
+  let category, target_pool = null, target_project = null, form;
+
+  if(defCat === 'requirements'){
+    // ── 需求入库：顶部两个标签页「公共需求池 / 项目需求池」，彻底分开、不再混一个下拉 ──
+    // AI 若标了项目归属，默认落在「项目需求池」tab，否则默认「公共需求池」。
+    const defTab = sugProject ? 'project' : 'public';
+    const prjPreselect = sugProject && prjOpts.find(o=>o.label.includes(sugProject))
+      ? prjOpts.find(o=>o.label.includes(sugProject)).value
+      : (prjOpts[0] && prjOpts[0].value || '');
+    const fields = [
+      // 公共池 tab：无额外必填
+      {key:'_public_hint', label:'该需求进入公共需求池，面向全团队，不归属任何项目。', type:'text', value:'', tab:'public', placeholder:'（无需填写，直接点通过入库）'},
+      // 项目池 tab：必选项目
+      prjOpts.length
+        ? {key:'target_project', label:'归属项目', type:'select', value:prjPreselect, options:prjOpts, tab:'project', required:true}
+        : {key:'_no_prj', label:'当前没有已开档项目。点「通过入库」将提示为该需求开档。', type:'text', value:sugProject||'', tab:'project'},
+      // 公共字段（两 tab 都显示）
+      {key:'final_name', label:'最终文件名（.md 结尾）', type:'text', value: sug.suggested_name || _rvSel.file, required:true},
+      {key:'target_release', label:'目标版本（可空）', type:'text', value:''},
+      {key:'note', label:'审核备注（可选）', type:'textarea', value:''},
+    ];
+    form = await wbForm('通过入库 · 需求', fields, {
+      icon:'📋', okText:'通过入库', width:540,
+      tabs:[{key:'public', label:'📋 公共需求池'}, {key:'project', label:'📦 项目需求池'}],
+      activeTab: defTab,
+    });
+    if(!form) return;
+    if(!form.final_name){ toast('文件名必填', true); return; }
+    category = 'requirements';
+    if(form.__tab === 'project'){
+      target_pool = 'project';
+      target_project = form.target_project || sugProject || '';
+      if(!target_project){ toast('请选择归属项目', true); return; }
+    } else {
+      target_pool = 'public';
+    }
+  } else {
+    // ── 非需求类目：保持单下拉（信号/设计/项目开档）──
+    const fields = [
+      {key:'category', label:'入库去向', type:'select', value:defCat, options:nonReqOpts},
+      {key:'final_name', label:'最终文件名（.md 结尾）', type:'text', value: sug.suggested_name || _rvSel.file, required:true},
+      {key:'designer', label:'设计人（仅设计时生效，可空）', type:'text', value:''},
+      {key:'target_release', label:'目标版本（仅设计生效，可空）', type:'text', value:''},
+      {key:'note', label:'审核备注（可选）', type:'textarea', value:''},
+    ];
+    form = await wbForm('通过入库', fields, {icon:'📥', okText:'通过入库', width:520});
+    if(!form) return;
+    if(!form.final_name){ toast('文件名必填', true); return; }
+    category = form.category;
+    // 用户在下拉里把类目改成了需求 → 默认进公共池（要归项目请用需求类目走标签页）
+    if(category === 'requirements') target_pool = 'public';
   }
-  fields.push(
-    {key:'final_name', label:'最终文件名（.md 结尾）', type:'text', value: sug.suggested_name || _rvSel.file, required:true},
-    {key:'designer', label:'设计人（仅设计时生效，可空）', type:'text', value:''},
-    {key:'target_release', label:'目标版本（仅设计/需求生效，可空）', type:'text', value:''},
-    {key:'note', label:'审核备注（可选）', type:'textarea', value:''},
-  );
-  const form = await wbForm('通过入库', fields, {icon:'📥', okText:'通过入库', width:520});
-  if(!form) return;
-  if(!form.final_name){ toast('文件名必填', true); return; }
-  // 解析入库去向 → category + target_pool + target_project
-  let category = form.category, target_pool = null, target_project = null;
-  if(form.category === 'req_project'){
-    category = 'requirements'; target_pool = 'project'; target_project = form.target_project || '';
-    if(!target_project){ toast('请选择目标项目', true); return; }
-  } else if(form.category === 'requirements'){
-    target_pool = 'public';   // 明确公共池
-  }
+
   const extra = {};
   if((form.designer||'').trim()) extra.designer = form.designer.trim();
   if((form.target_release||'').trim()) extra.target_release = form.target_release.trim();

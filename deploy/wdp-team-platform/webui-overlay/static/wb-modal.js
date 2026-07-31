@@ -98,7 +98,11 @@ window.wbForm = function(title, fields, opts){
   opts = opts||{};
   return new Promise(resolve=>{
     const {card, close} = _shell({width:opts.width||500, onCancel:()=>resolve(null)});
-    const rows = fields.map((f,i)=>{
+    // 可选：顶部标签页（opts.tabs=[{key,label}]）。字段带 tab 属性时仅在对应 tab 激活时显示；
+    // 不带 tab 的字段在所有 tab 下都显示（公共字段）。返回值附带 __tab=当前激活 tab key。
+    const tabs = Array.isArray(opts.tabs) ? opts.tabs : null;
+    let activeTab = tabs ? (opts.activeTab || tabs[0].key) : null;
+    const fieldRow = (f)=>{
       let ctrl;
       if(f.type==='textarea'){
         ctrl = `<textarea class="wbm-in" data-k="${esc(f.key)}" placeholder="${esc(f.placeholder||'')}">${esc(f.value||'')}</textarea>`;
@@ -110,16 +114,42 @@ window.wbForm = function(title, fields, opts){
       } else {
         ctrl = `<input class="wbm-in" data-k="${esc(f.key)}" type="${f.type||'text'}" placeholder="${esc(f.placeholder||'')}" value="${esc(f.value==null?'':f.value)}">`;
       }
-      return `<div style="margin-bottom:13px"><label style="font-size:12px;font-weight:600;color:var(--ink-2,#3a4a42)">${esc(f.label)}${f.required?' <span style="color:#dc2626">*</span>':''}</label>${ctrl}</div>`;
-    }).join('');
+      return `<div class="wbm-field" data-tab="${esc(f.tab||'')}" style="margin-bottom:13px"><label style="font-size:12px;font-weight:600;color:var(--ink-2,#3a4a42)">${esc(f.label)}${f.required?' <span style="color:#dc2626">*</span>':''}</label>${ctrl}</div>`;
+    };
+    const rows = fields.map(fieldRow).join('');
+    const tabBar = tabs ? `<div class="wbm-tabbar" style="display:flex;gap:6px;margin-bottom:16px;border-bottom:1px solid var(--line,#dfe8e2)">${tabs.map(t=>
+      `<button type="button" class="wbm-tab" data-tabkey="${esc(t.key)}" style="padding:8px 16px;border:none;background:none;font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;color:var(--ink-3,#7a8a82);margin-bottom:-1px">${esc(t.label)}</button>`
+    ).join('')}</div>` : '';
     card.innerHTML = _head(title, opts.icon||'📝')
+      + tabBar
       + rows
       + `<div id="wbmErr" style="color:#dc2626;font-size:12px;min-height:16px;margin-bottom:4px"></div>`
       + `<div style="display:flex;justify-content:flex-end;gap:10px"><button class="wbm-btn" data-cancel>${esc(opts.cancelText||'取消')}</button><button class="wbm-btn primary" data-ok>${esc(opts.okText||'确定')}</button></div>`;
+    // tab 显隐逻辑
+    const applyTab = ()=>{
+      if(!tabs) return;
+      card.querySelectorAll('.wbm-tab').forEach(b=>{
+        const on = b.dataset.tabkey===activeTab;
+        b.style.color = on ? 'var(--brand-strong,#16a34a)' : 'var(--ink-3,#7a8a82)';
+        b.style.borderBottomColor = on ? 'var(--brand-strong,#16a34a)' : 'transparent';
+      });
+      card.querySelectorAll('.wbm-field').forEach(el=>{
+        const t = el.dataset.tab||'';
+        el.style.display = (!t || t===activeTab) ? '' : 'none';
+      });
+    };
+    if(tabs){
+      card.querySelectorAll('.wbm-tab').forEach(b=>{
+        b.onclick = ()=>{ activeTab = b.dataset.tabkey; applyTab(); card.querySelector('#wbmErr').textContent=''; };
+      });
+      applyTab();
+    }
     card.querySelector('[data-cancel]').onclick = ()=>{ close(); resolve(null); };
     card.querySelector('[data-ok]').onclick = ()=>{
       const out = {};
       for(const f of fields){
+        // 隐藏 tab 的字段不校验、不采集（避免非激活 tab 的必填项拦截提交）
+        if(tabs && f.tab && f.tab!==activeTab) continue;
         const el = card.querySelector(`[data-k="${f.key}"]`);
         out[f.key] = el ? el.value : '';
         if(f.required && !String(out[f.key]).trim()){
@@ -128,9 +158,10 @@ window.wbForm = function(title, fields, opts){
           return;
         }
       }
+      if(tabs) out.__tab = activeTab;
       close(); resolve(out);
     };
-    setTimeout(()=>{ const first=card.querySelector('[data-k]'); first&&first.focus(); }, 30);
+    setTimeout(()=>{ const first=card.querySelector('.wbm-field:not([style*="display: none"]) [data-k]')||card.querySelector('[data-k]'); first&&first.focus(); }, 30);
   });
 };
 

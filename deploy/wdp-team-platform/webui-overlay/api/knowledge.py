@@ -401,11 +401,13 @@ def get_stats() -> dict:
                         preq_n += len([f for f in rq.glob('*.md') if not f.name.startswith('_')])
                     if dl.is_dir():
                         dlv_n += len([f for f in dl.glob('*.md') if not f.name.startswith('_')])
-            # PREQ 计入需求统计（项目需求也是需求，工作台「需求」badge 含项目需求）
+            # PREQ（项目需求）不并入公共需求 badge——公共需求 badge 只反映公共需求池，
+            # 与需求 tab 列表口径一致（列表只显示公共池）。项目需求单列在项目卡片下展示。
+            # 历史教训：曾把 PREQ 加进 requirements.count/active_count，导致「需求 badge 数字
+            # 含项目需求，但需求列表不含」→ 数字和列表对不上（见交接卡片第四节）。
             if 'requirements' in stats['categories']:
-                stats['categories']['requirements']['count'] += preq_n
-                stats['categories']['requirements']['active_count'] += preq_n
                 stats['categories']['requirements']['project_req_count'] = preq_n
+            # 项目需求/交付材料仍计入知识库总量（total 是整体资产口径，不是公共需求口径）
             stats['total'] += preq_n + dlv_n
             stats['active_total'] += preq_n + dlv_n
             stats['project_requirements'] = preq_n

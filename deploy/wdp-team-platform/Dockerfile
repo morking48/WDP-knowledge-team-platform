@@ -55,6 +55,7 @@ RUN apt-get update -y --fix-missing --no-install-recommends \
         openssh-client \
         git \
         xz-utils \
+        procps \
     && apt-get upgrade -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /etc/apt/apt.conf.d/01proxy
@@ -81,8 +82,8 @@ WORKDIR /apptoo
 
 RUN groupadd -g 1024 hermeswebui \
     && useradd -u 1024 -d /home/hermeswebui -g hermeswebui -G users -s /bin/bash -m hermeswebui \
-    && mkdir -p /app /uv_cache /workspace \
-    && chown -R hermeswebui:hermeswebui /home/hermeswebui /app /uv_cache /workspace \
+    && mkdir -p /app /uv_cache /workspace /data/cron \
+    && chown -R hermeswebui:hermeswebui /home/hermeswebui /app /uv_cache /workspace /data \
     && chmod 0755 /home/hermeswebui \
     && chmod 1777 /app /uv_cache /workspace
 
@@ -91,6 +92,16 @@ COPY --chmod=555 web-ui/docker_init.bash /hermeswebui_init.bash
 
 # 标记当前在容器内（官方一致）
 RUN touch /.within_container
+
+# git 身份（WDP 定制）：平台每次入库都执行 git commit，身份缺失会导致 commit
+# 静默失败（有文件无版本记录）。写 /etc/gitconfig（--system），对所有用户生效，
+# 随镜像持久化，Pod 重启/滚动更新不丢失。
+RUN git config --system user.name  "wdp-workbench" \
+    && git config --system user.email "workbench@wdp.local" \
+    # gitlab 凭据：不烧进镜像，运行时从环境变量 GIT_USER / GIT_TOKEN 读取
+    # （K8s 里通过 Secret 注入；未设置时不影响本地 commit，只影响 push/pull 远端）
+    && git config --system credential.helper \
+       '!f() { echo "username=${GIT_USER}"; echo "password=${GIT_TOKEN}"; }; f'
 
 # -----------------------------------------------------------------------------
 # 3) 预装 uv 到系统路径（官方一致）
@@ -128,6 +139,12 @@ RUN echo "__version__ = '${HERMES_VERSION}'" > /apptoo/api/_version.py
 #      - 运行时加： -v /path/to/agent-src:/opt/hermes:ro
 # -----------------------------------------------------------------------------
 COPY --chown=root:root agent-src/ /opt/hermes
+
+# 安装 hermes CLI 到系统环境（main-agent Pod 的启动命令 `hermes gateway run`
+# 依赖该可执行文件；WebUI 侧不受影响，仍按官方 init 流程运行）
+# PIP_INDEX_URL：内网访问不了 pypi.org 时，构建时用 --build-arg 换国内镜像源
+ARG PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+RUN uv pip install --system --no-cache --index-url "${PIP_INDEX_URL}" /opt/hermes
 
 # -----------------------------------------------------------------------------
 # 6) COPY WDP overlay 覆盖到 /apptoo（核心定制层）

@@ -346,9 +346,39 @@ window.wbOpenReviewDialog = function(item){
         // 采纳 AI 建议的归类（suggested_category）+ AI 推导的价值字段（suggested_fields，
         // 完整度检查的落地：审核agent从内容推导出的 business_value 等直接随入库写入）
         const sugFields = (prop.suggested_fields && typeof prop.suggested_fields==='object') ? prop.suggested_fields : {};
+        const finalCat = prop.suggested_category || item.category || '';
+        // ── 需求类目：让 admin 明确入库去向（公共/项目池），与基础版审核一致，不再靠后端隐式回落 ──
+        let poolSel = { target_pool: null, target_project: null };
+        if(finalCat === 'requirements'){
+          const sugPrj = sugFields.related_project || '';
+          let prjOpts = [];
+          try{
+            const pj = await api('/api/knowledge/projects');
+            prjOpts = (pj.projects||[]).filter(p=>p.status!=='已结项').map(p=>({value:p.dir, label:`${p.title}（${p.customer||'—'}）`}));
+          }catch(_){}
+          const prjPreselect = sugPrj && prjOpts.find(o=>o.label.includes(sugPrj))
+            ? prjOpts.find(o=>o.label.includes(sugPrj)).value : (prjOpts[0]&&prjOpts[0].value||'');
+          const pf = await wbForm('入库去向 · 需求', [
+            {key:'_ph', label:'该需求进入公共需求池，面向全团队，不归属项目。', type:'text', value:'', tab:'public', placeholder:'（无需填写，直接确认）'},
+            prjOpts.length
+              ? {key:'target_project', label:'归属项目', type:'select', value:prjPreselect, options:prjOpts, tab:'project', required:true}
+              : {key:'_np', label:'当前没有已开档项目，选项目池将提示先开档。', type:'text', value:sugPrj, tab:'project'},
+          ], {icon:'📋', okText:'确认入库', width:520,
+              tabs:[{key:'public',label:'📋 公共需求池'},{key:'project',label:'📦 项目需求池'}],
+              activeTab: sugPrj ? 'project' : 'public'});
+          if(!pf) return;   // 取消
+          if(pf.__tab === 'project'){
+            poolSel.target_pool = 'project';
+            poolSel.target_project = pf.target_project || sugPrj || '';
+            if(!poolSel.target_project){ dlg.addSys('未选择归属项目，已取消入库。'); return; }
+          } else {
+            poolSel.target_pool = 'public';
+          }
+        }
         const doApprove = (extra)=>api('/api/review/approve', {method:'POST', body:JSON.stringify({
           user: item._profile || item.profile, file: item.file,
           final_category: prop.suggested_category || undefined,
+          target_pool: poolSel.target_pool, target_project: poolSel.target_project,
           extra_fields: Object.assign({}, sugFields, extra || {})})});
         let d;
         try{
@@ -360,6 +390,11 @@ window.wbOpenReviewDialog = function(item){
             // 在对话流内嵌补字段卡片（不弹系统窗，避免层级遮挡/弹窗堆积），填完就地重试入库
             renderFillCard(missing, doApprove, dlg, prop, item, adv);
             return;   // 卡片接管后续流程；不抛错（按钮由卡片流程控制）
+          }
+          // 项目未开档 → 结构化告警，提示改公共池或先开档（对话版不弹开档表单，指引到基础版审核）
+          if(err.status===409 && err.data && err.data.code==='PROJECT_NOT_FOUND'){
+            dlg.addSys(`<span style="color:var(--danger)">⚠ 项目「${h(err.data.project_name||'')}」未开档，项目需求无法入库。请先到「项目」页为其开档，或改入公共需求池后重试。</span>`);
+            return;
           }
           dlg.addSys(`<span style="color:var(--danger)">⚠ 入库未通过：${h(err.message)}。对话已保留，无需重开。</span>`);
           throw err;
