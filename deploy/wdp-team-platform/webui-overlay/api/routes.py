@@ -3163,7 +3163,7 @@ button[type=submit]:disabled{opacity:.6;cursor:not-allowed}
 .foot{margin-top:22px;font-size:12px;color:var(--ink-2)}
 </style></head><body>
 <div class="card">
-  <div class="logo">{{BOT_NAME_INITIAL}}</div>
+  <div class="logo" style="font-size:17px;letter-spacing:.02em">{{BOT_NAME_INITIAL}}</div>
   <h1>{{BOT_NAME}}</h1>
   <p class="sub">WDP 产品团队 AI 工作台</p>
   <form id="login-form" data-invalid-pw="账号或密码错误" data-conn-failed="连接失败，请稍后再试">
@@ -4130,9 +4130,15 @@ def handle_get(handler, parsed) -> bool:
         # 多用户模式：渲染绿白液体玻璃登录页（含账号+密码）
         from api import users as _users
         if _users.multiuser_enabled():
+            # WDP 团队平台品牌：登录页不出现 "Hermes"。默认「WDP产品协作平台」，
+            # 若运维在 settings.json 显式设了 bot_name（非默认 Hermes）则尊重其配置。
+            _team_name = _settings.get("bot_name")
+            if not _team_name or _team_name == "Hermes":
+                _team_name = "WDP产品协作平台"
+            _team_name = _html.escape(_team_name)
             _page = (
-                _LOGIN_PAGE_HTML_MULTIUSER.replace("{{BOT_NAME}}", _bn)
-                .replace("{{BOT_NAME_INITIAL}}", _bn[0].upper())
+                _LOGIN_PAGE_HTML_MULTIUSER.replace("{{BOT_NAME}}", _team_name)
+                .replace("{{BOT_NAME_INITIAL}}", "WDP")
                 .replace("{{WEBUI_VERSION}}", version_token)
             )
             return t(handler, _page, content_type="text/html; charset=utf-8")
