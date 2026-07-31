@@ -281,6 +281,7 @@ def model_options() -> dict:
 # hermes-home/ 已 gitignore；部署时该文件在服务器持久化卷上，不进任何仓库。
 _SUPPORTED_INTEGRATIONS = {
     'feishu': ['app_id', 'app_secret'],
+    'wecom': ['corp_id', 'corp_secret'],   # 企业微信：企业ID/应用ID + 应用 Secret（团队共用）
 }
 
 
