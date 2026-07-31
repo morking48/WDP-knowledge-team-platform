@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """飞书文档读取工具（供对话 agent 调用）。
 
-用个人配置的飞书凭据（integrations.json）换 tenant_access_token，
+用团队配置的飞书凭据（integrations.json）换 tenant_access_token，
 调飞书云文档 API 拉取文档正文——绕过官方 web_extract 的限制（飞书文档需登录鉴权）。
 
 用法：
@@ -11,8 +11,9 @@
 
 凭据来源（按优先级）：
     1. 环境变量 FEISHU_APP_ID / FEISHU_APP_SECRET
-    2. $HERMES_HOME/integrations.json 的 feishu.app_id / app_secret
-       （多用户下 agent 的 HERMES_HOME 即成员 profile home，各自的凭据）
+    2. 团队 HERMES_HOME 根的 integrations.json 的 feishu.app_id / app_secret
+       （团队级配置，全团队共用一套；多用户下 agent 的 HERMES_HOME 可能被指到
+       profiles/<user>，脚本会向上回溯到团队根找 integrations.json）
 
 前置：飞书自建应用需开通「查看、评论、编辑和管理云文档」等文档读取权限，
       且目标文档已授权给该应用（或应用在文档所在空间有权限）。
@@ -110,7 +111,7 @@ def _get(url: str, token: str) -> dict:
 def read_doc(url_or_token: str) -> dict:
     app_id, app_secret = _load_cred()
     if not app_id or not app_secret:
-        return {'ok': False, 'error': '未找到飞书凭据。请在「个人中心→集成授权」配置飞书 App ID/Secret，或设 FEISHU_APP_ID/FEISHU_APP_SECRET 环境变量。'}
+        return {'ok': False, 'error': '未找到飞书凭据。飞书凭据为团队级配置，请管理员到「团队 Agent → 集成授权」配置飞书 App ID/Secret，或设 FEISHU_APP_ID/FEISHU_APP_SECRET 环境变量。'}
     try:
         token = _tenant_token(app_id, app_secret)
     except Exception as e:
