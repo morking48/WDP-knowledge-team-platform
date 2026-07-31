@@ -197,6 +197,7 @@ async function loadWorkbench(){
   try{
     const st = await api('/api/knowledge/stats');
     const cats = st.categories || {};
+    window._wbProjectReqCount = st.project_requirements|0;   // 项目需求(PREQ)数缓存,供需求统计条单列展示
     setBadge('signals', cats.signals && cats.signals.active_count);
     setBadge('requirements', cats.requirements && cats.requirements.active_count);
     setBadge('designs', cats.designs && cats.designs.active_count);
@@ -220,6 +221,7 @@ window.wbRefreshRailCnt = async function(){
   try{
     const st = await api('/api/knowledge/stats');
     const c = st.categories || {};
+    window._wbProjectReqCount = st.project_requirements|0;   // 同步项目需求数缓存
     setBadge('signals', c.signals && c.signals.active_count);
     setBadge('requirements', c.requirements && c.requirements.active_count);
     setBadge('designs', c.designs && c.designs.active_count);
@@ -452,8 +454,12 @@ function renderReqStats(items){
   const p0 = items.filter(x=>x.priority==='P0'&&x.status!=='已关闭').length;
   const dev = items.filter(x=>x.status==='研发中').length;
   const online = items.filter(x=>x.status==='已上线').length;
+  // 项目需求(PREQ)数：从 stats 缓存取（公共需求 badge 不含 PREQ，这里单列展示，
+  // 避免「开了项目需求却在工作台看不到统计」——公共池与项目池分列，一眼看全）
+  const preq = (window._wbProjectReqCount|0);
   box.innerHTML = `
-    <div class="stat"><div class="num">${active}</div><div class="lbl">活跃需求</div></div>
+    <div class="stat"><div class="num">${active}</div><div class="lbl">公共需求</div></div>
+    <div class="stat"><div class="num">${preq}</div><div class="lbl">项目需求</div><div class="trend" style="color:#7c3aed">归属项目</div></div>
     <div class="stat"><div class="num">${p0}</div><div class="lbl">P0待办</div><div class="trend" style="color:var(--danger)">最高优先</div></div>
     <div class="stat"><div class="num">${dev}</div><div class="lbl">研发中</div></div>
     <div class="stat"><div class="num">${online}</div><div class="lbl">已上线</div><div class="trend" style="color:var(--brand-strong)">已交付</div></div>`;
