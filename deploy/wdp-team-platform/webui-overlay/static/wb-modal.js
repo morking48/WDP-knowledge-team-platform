@@ -103,6 +103,12 @@ window.wbForm = function(title, fields, opts){
     const tabs = Array.isArray(opts.tabs) ? opts.tabs : null;
     let activeTab = tabs ? (opts.activeTab || tabs[0].key) : null;
     const fieldRow = (f)=>{
+      // 纯说明文字（不渲染输入框、不采集值）——用于 tab 分支下的引导说明，
+      // 避免为了和另一 tab 的字段对齐而硬塞一个只能看不能填的空 input。
+      if(f.type==='note'){
+        return `<div class="wbm-field" data-tab="${esc(f.tab||'')}" style="margin-bottom:13px">`
+          + `<div style="font-size:12.5px;line-height:1.6;color:var(--ink-2,#4b5d52);background:var(--brand-soft,rgba(22,163,74,.08));border:1px solid var(--line,#dfe8e2);border-radius:10px;padding:11px 13px">${esc(f.label)}</div></div>`;
+      }
       let ctrl;
       if(f.type==='textarea'){
         ctrl = `<textarea class="wbm-in" data-k="${esc(f.key)}" placeholder="${esc(f.placeholder||'')}">${esc(f.value||'')}</textarea>`;

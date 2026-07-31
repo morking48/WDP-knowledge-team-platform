@@ -156,12 +156,12 @@ async function doApprove(){
       ? prjOpts.find(o=>o.label.includes(sugProject)).value
       : (prjOpts[0] && prjOpts[0].value || '');
     const fields = [
-      // 公共池 tab：无额外必填
-      {key:'_public_hint', label:'该需求进入公共需求池，面向全团队，不归属任何项目。', type:'text', value:'', tab:'public', placeholder:'（无需填写，直接点通过入库）'},
+      // 公共池 tab：纯说明,不放输入框
+      {key:'_public_hint', label:'该需求进入公共需求池，面向全团队，不归属任何项目。直接点「通过入库」即可。', type:'note', tab:'public'},
       // 项目池 tab：必选项目
       prjOpts.length
         ? {key:'target_project', label:'归属项目', type:'select', value:prjPreselect, options:prjOpts, tab:'project', required:true}
-        : {key:'_no_prj', label:'当前没有已开档项目。点「通过入库」将提示为该需求开档。', type:'text', value:sugProject||'', tab:'project'},
+        : {key:'_no_prj', label:'当前没有已开档项目。点「通过入库」将提示为该需求开档。', type:'note', tab:'project'},
       // 公共字段（两 tab 都显示）
       {key:'final_name', label:'最终文件名（.md 结尾）', type:'text', value: sug.suggested_name || _rvSel.file, required:true},
       {key:'target_release', label:'目标版本（可空）', type:'text', value:''},

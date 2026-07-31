@@ -359,10 +359,10 @@ window.wbOpenReviewDialog = function(item){
           const prjPreselect = sugPrj && prjOpts.find(o=>o.label.includes(sugPrj))
             ? prjOpts.find(o=>o.label.includes(sugPrj)).value : (prjOpts[0]&&prjOpts[0].value||'');
           const pf = await wbForm('入库去向 · 需求', [
-            {key:'_ph', label:'该需求进入公共需求池，面向全团队，不归属项目。', type:'text', value:'', tab:'public', placeholder:'（无需填写，直接确认）'},
+            {key:'_ph', label:'该需求进入公共需求池，面向全团队，不归属项目。直接点「确认入库」即可。', type:'note', tab:'public'},
             prjOpts.length
               ? {key:'target_project', label:'归属项目', type:'select', value:prjPreselect, options:prjOpts, tab:'project', required:true}
-              : {key:'_np', label:'当前没有已开档项目，选项目池将提示先开档。', type:'text', value:sugPrj, tab:'project'},
+              : {key:'_np', label:'当前没有已开档项目，选项目池将提示先开档。', type:'note', tab:'project'},
           ], {icon:'📋', okText:'确认入库', width:520,
               tabs:[{key:'public',label:'📋 公共需求池'},{key:'project',label:'📦 项目需求池'}],
               activeTab: sugPrj ? 'project' : 'public'});
