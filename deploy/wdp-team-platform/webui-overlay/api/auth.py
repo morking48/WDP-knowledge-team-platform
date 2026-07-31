@@ -421,9 +421,28 @@ def verify_session(cookie_value: str) -> bool:
         len(sig) == 32 and hmac.compare_digest(sig, full_sig[:32])
     )
     if not valid:
+        # 多副本启动竞态：两个 Pod 同时首启时可能各自生成签名密钥（后写覆盖先写），
+        # 导致本 Pod 内存缓存的 key 与共享卷上的最终 key 不一致 → 另一 Pod 签发的
+        # cookie 在本 Pod 验签失败（用户表现为"登录两次/反复被踢"）。
+        # 验签失败时刷新一次内存 key 缓存（重读共享卷）再验一次。
+        global _SIGNING_KEY_CACHE
+        _SIGNING_KEY_CACHE = None
+        fresh_sig = hmac.new(_signing_key(), token.encode(), hashlib.sha256).hexdigest()
+        valid = hmac.compare_digest(sig, fresh_sig) or (
+            len(sig) == 32 and hmac.compare_digest(sig, fresh_sig[:32])
+        )
+    if not valid:
         return False
     with _SESSIONS_LOCK:
         expiry = _sessions.get(token)
+        if not expiry:
+            # 多副本部署：登录可能发生在另一个 Pod（它写了共享卷上的 .sessions.json，
+            # 但本 Pod 的内存缓存是启动时加载的旧快照）。内存未命中时回读文件一次，
+            # 避免"登录两次才能进"（请求被负载均衡到没见过该 token 的副本）。
+            fresh = _load_sessions()
+            if token in fresh:
+                _sessions.update(fresh)
+                expiry = _sessions.get(token)
         if not expiry or time.time() > expiry:
             _sessions.pop(token, None)
             _save_sessions(_sessions)
@@ -522,7 +541,7 @@ def check_auth(handler, parsed) -> bool:
     return False
 
 
-def _reject_unauthorized(handler, parsed) -> None:
+def _reject_unauthorized(handler, parsed) -> bool:
     """发送 401（API）或 302 跳登录（页面）。从 check_auth 抽出以便复用。"""
     if parsed.path.startswith('/api/'):
         body = b'{"error":"Authentication required"}'
