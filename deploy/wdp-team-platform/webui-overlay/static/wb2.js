@@ -925,11 +925,7 @@ async function loadTeamIntegrations(d){
   const box = $('#teamIntegrationsBox');
   if(!box) return;
   const fs = (d && d.integrations && d.integrations.feishu) || {};
-  const wc = (d && d.integrations && d.integrations.wecom) || {};
   const cfgTag = fs.configured
-    ? `<span class="tag green" style="font-size:10px">已配置</span>`
-    : `<span class="tag gray" style="font-size:10px">未配置</span>`;
-  const wcTag = wc.configured
     ? `<span class="tag green" style="font-size:10px">已配置</span>`
     : `<span class="tag gray" style="font-size:10px">未配置</span>`;
   box.innerHTML = `
@@ -953,26 +949,8 @@ async function loadTeamIntegrations(d){
       </div>
       <div style="text-align:right"><button class="btn sm primary" id="saveFeishuBtn">保存飞书凭据</button></div>
     </div>
-
-    <div style="border:1px solid var(--line);border-radius:12px;padding:16px;background:rgba(255,255,255,.7);max-width:560px;margin-top:14px">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-        <span style="font-size:15px;font-weight:700">企业微信（WeCom）</span>${wcTag}
-      </div>
-      <div style="font-size:11.5px;color:var(--ink-3);margin-bottom:14px">
-        企微自建应用凭据（企业ID/应用ID + 应用 Secret）。全团队共用一套。${wc.updated_at?('上次更新：'+h(wc.updated_at)):''}
-      </div>
-      <div style="margin-bottom:12px">
-        <label style="font-size:12px;font-weight:600;color:var(--ink-2)">Corp ID（企业ID/应用ID）</label>
-        <input id="wcCorpId" type="text" placeholder="企业ID或应用ID" value="${h(wc.corp_id||'')}"
-          style="width:100%;padding:9px 12px;border-radius:9px;border:1px solid var(--line);font-size:13px;font-family:ui-monospace,monospace;background:#fff;color:var(--ink);margin-top:5px">
-      </div>
-      <div style="margin-bottom:16px">
-        <label style="font-size:12px;font-weight:600;color:var(--ink-2)">Corp Secret（应用 Secret）</label>
-        <input id="wcCorpSecret" type="text" placeholder="${wc.configured?'已保存（留空或不改则保留原值）':'输入 Secret'}" value="${h(wc.corp_secret||'')}"
-          style="width:100%;padding:9px 12px;border-radius:9px;border:1px solid var(--line);font-size:13px;font-family:ui-monospace,monospace;background:#fff;color:var(--ink);margin-top:5px">
-        <div style="font-size:11px;color:var(--ink-3);margin-top:4px">🔒 存服务器团队配置（integrations.json，已 gitignore），不进任何仓库。</div>
-      </div>
-      <div style="text-align:right"><button class="btn sm primary" id="saveWecomBtn">保存企微凭据</button></div>
+    <div style="font-size:11.5px;color:var(--ink-3);margin-top:12px;max-width:560px">
+      💡 企业微信文档已通过官方 MCP 接入（agent 可直接读写企微文档/智能表格），无需在此配置凭据。
     </div>`;
   $('#saveFeishuBtn').onclick = async ()=>{
     const app_id = $('#fsAppId').value.trim();
@@ -982,18 +960,6 @@ async function loadTeamIntegrations(d){
       const r = await api('/api/admin/team-agent/integration', {method:'POST', body:JSON.stringify({
         provider:'feishu', values:{app_id, app_secret: secret}})});
       toast(r.configured ? '✅ 飞书凭据已保存（全团队生效）' : '已保存（凭据尚不完整）');
-      if(window.__wb) window.__wb.LOADED.teamagent=false;
-      if(window.loadTeamAgent) window.loadTeamAgent();
-    }catch(e){ toast('保存失败：'+e.message, true); }
-  };
-  $('#saveWecomBtn').onclick = async ()=>{
-    const corp_id = $('#wcCorpId').value.trim();
-    const corp_secret = $('#wcCorpSecret').value.trim();
-    if(!corp_id){ toast('请填 Corp ID', true); return; }
-    try{
-      const r = await api('/api/admin/team-agent/integration', {method:'POST', body:JSON.stringify({
-        provider:'wecom', values:{corp_id, corp_secret}})});
-      toast(r.configured ? '✅ 企微凭据已保存（全团队生效）' : '已保存（凭据尚不完整）');
       if(window.__wb) window.__wb.LOADED.teamagent=false;
       if(window.loadTeamAgent) window.loadTeamAgent();
     }catch(e){ toast('保存失败：'+e.message, true); }

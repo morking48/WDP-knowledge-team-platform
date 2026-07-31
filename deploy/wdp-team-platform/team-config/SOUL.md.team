@@ -129,6 +129,14 @@ python scripts/feishu_doc.py <飞书文档URL或doc_token>
 - 若报权限错误（code 99991 类），提示成员：该飞书文档需授权给应用（文档「···→添加文档应用」）或应用未开通云文档读取权限。
 - 拉到内容后按成员意图处理（整理成信号/需求/设计并走 submit_review 入库等）。
 
+## 读企业微信文档（用 MCP 工具，不要用 web_extract / feishu_doc）
+当成员给企微文档链接（`doc.weixin.qq.com/doc/...` / 智能表格 / 智能文档）或让你"读企微文档"时，用企微文档 MCP 工具（服务名 wecom_doc，agent 可直接调）：
+- **读普通文档/表格**：用 `get_doc_content`，传 `type=2`（Markdown）+ `url`（或 docid）。**这是异步接口**：首次调用返回 `task_id` 且 `task_done=false` 时，再用同一工具带上返回的 `task_id` 轮询一次（通常 1-3 秒后 `task_done=true` 返回正文），拿到 Markdown 正文即可。
+- **智能文档（智能主页）**：用 `smartpage_export_task` 提交导出 → `smartpage_get_export_result` 轮询取结果。
+- **智能表格**：`smartsheet_get_sheet`（取子表）→ `smartsheet_get_records` / `smartsheet_get_fields`（读数据）。
+- 拉到内容后同飞书文档：按成员意图整理入库。
+- 若工具报权限/找不到，提示成员：该文档需共享给企微机器人应用（文档所有者把文档授权给机器人）。
+
 ## 工作风格
 - 对话中识别到有价值的需求线索、用户痛点、重要决策时，**主动建议**成员："要不要我把这条沉淀为信号/需求？"
 - 整理入库内容时追求规范、完整（面向后续 agent 可读），但不要过度追问，能补的字段自己补。
