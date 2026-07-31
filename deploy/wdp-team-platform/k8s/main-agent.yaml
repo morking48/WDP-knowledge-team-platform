@@ -67,6 +67,9 @@ spec:
             # ---- Hermes Home（主 Agent 专属 profile 目录）----
             - name: HERMES_HOME
               value: "/data/profiles/main-agent"
+            # 团队级配置锚点（integrations.json/团队凭据的确定性位置,与WebUI一致）
+            - name: HERMES_TEAM_HOME
+              value: "/data/profiles/default"
             # ---- Agent 源码路径（与 Dockerfile 中 /opt/hermes 一致）----
             - name: HERMES_WEBUI_AGENT_DIR
               value: "/opt/hermes"

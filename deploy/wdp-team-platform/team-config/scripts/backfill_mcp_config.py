@@ -40,7 +40,7 @@ mcp_servers:
 def _team_root() -> Path | None:
     """团队级 HERMES_HOME 根（放 integrations.json）。多用户下 HERMES_HOME 可能指向
     profiles/<user>，integrations.json 在团队根，故向上回溯。"""
-    home = os.getenv("HERMES_HOME", "").strip()
+    home = os.getenv("HERMES_TEAM_HOME", "").strip() or os.getenv("HERMES_HOME", "").strip()
     if home:
         hp = Path(home)
         if (hp / "integrations.json").is_file():
@@ -107,7 +107,62 @@ def process_one(cfg_path: Path, apikey: str) -> str:
     return "patched"
 
 
+def seed_team_root() -> None:
+    """铺设团队根（HERMES_HOME）的团队级文件：SOUL.md / config.yaml。
+
+    根因：add-user 只初始化成员 profile，团队根 default 的 SOUL.md / config.yaml
+    从没人建 → 团队 Agent 页全空（团队规则/模型/集成授权都读团队根文件）。
+    这里启动时从镜像内置母本铺设，缺就补、已有不覆盖（保护管理员已改的规则）。
+
+    母本源：TEAM_CONFIG_SRC（默认 /opt/hermes-team-config，Dockerfile COPY 进来）。
+    """
+    home = os.getenv("HERMES_TEAM_HOME", "").strip() or os.getenv("HERMES_HOME", "").strip()
+    if not home:
+        return
+    home_p = Path(home)
+    try:
+        home_p.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        print(f"[seed_team_root] 无法创建团队根 {home_p}: {e}")
+        return
+    src = Path(os.getenv("TEAM_CONFIG_SRC", "/opt/hermes-team-config"))
+    if not src.is_dir():
+        print(f"[seed_team_root] 母本源不存在 {src}，跳过")
+        return
+    # (母本文件, 目标文件) —— 目标缺失才铺
+    seeds = [
+        ("SOUL.md.team", "SOUL.md"),
+        ("config.yaml.fallback-template", "config.yaml"),
+    ]
+    for src_name, dst_name in seeds:
+        sp = src / src_name
+        dp = home_p / dst_name
+        if dp.exists():
+            print(f"[seed_team_root] {dst_name}: 已存在，跳过（保护现有）")
+            continue
+        if not sp.is_file():
+            print(f"[seed_team_root] 母本缺失 {sp}，跳过 {dst_name}")
+            continue
+        try:
+            dp.write_text(sp.read_text(encoding="utf-8"), encoding="utf-8")
+            print(f"[seed_team_root] {dst_name}: 已从母本 {src_name} 铺设 ✅")
+        except Exception as e:
+            print(f"[seed_team_root] 铺设 {dst_name} 失败: {e}")
+    # integrations.json 不铺母本（含凭据，由管理员在平台 UI 配）；但确保空文件存在，避免读取报错
+    ij = home_p / "integrations.json"
+    if not ij.exists():
+        try:
+            ij.write_text("{}", encoding="utf-8")
+            print("[seed_team_root] integrations.json: 已建空文件（凭据由 UI 配）")
+        except Exception:
+            pass
+
+
 def main() -> int:
+    # ① 先铺团队根母本（SOUL.md / config.yaml），根治团队 Agent 页空
+    seed_team_root()
+
+    # ② 再做 MCP 配置补齐 + apikey 注入
     apikey = _resolve_apikey()
     if apikey:
         src = "env" if os.getenv("WECOM_MCP_APIKEY", "").strip() else "integrations.json"

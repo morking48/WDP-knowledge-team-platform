@@ -69,6 +69,12 @@ spec:
             # 存放 WebUI 会话、工作区、设置等状态
             - name: HERMES_HOME
               value: "/data/profiles/default"
+            # 团队级配置锚点：SOUL.md/config.yaml/integrations.json/快照/技能草稿的确定性位置。
+            # 必须显式设置——运行时 HERMES_HOME 会被多用户 per-request profile 切换改写，
+            # 且 default profile 会被解析成 base home(/data)，造成团队文件读写错位
+            # （团队Agent页全空 + /data 下 Permission denied 的根因）。
+            - name: HERMES_TEAM_HOME
+              value: "/data/profiles/default"
             # ---- WebUI 状态目录 ----
             # 默认在 HERMES_HOME/webui 下，显式指定到共享 profiles 卷
             - name: HERMES_WEBUI_STATE_DIR

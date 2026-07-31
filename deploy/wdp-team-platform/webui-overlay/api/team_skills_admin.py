@@ -28,9 +28,12 @@ def _team_skill_dirs() -> list:
 
 
 def _drafts_dir() -> Path:
-    """草稿目录（存团队 home 下的隐藏目录，不进正式 skill）。"""
+    """草稿目录（存团队 home 下的隐藏目录，不进正式 skill）。
+
+    团队 home 用确定性锚点 HERMES_TEAM_HOME（防 per-request profile 切换污染
+    HERMES_HOME 导致读写错位——见 team_agent._team_home 的说明）。"""
     import os
-    home = os.getenv('HERMES_HOME', '').strip()
+    home = os.getenv('HERMES_TEAM_HOME', '').strip() or os.getenv('HERMES_HOME', '').strip()
     if home:
         base = Path(home)
     else:

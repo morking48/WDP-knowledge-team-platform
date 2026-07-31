@@ -46,7 +46,7 @@ def _load_cred() -> tuple[str, str]:
     if aid and sec:
         return aid, sec
     candidates = []
-    home = os.getenv('HERMES_HOME', '').strip()
+    home = os.getenv('HERMES_TEAM_HOME', '').strip() or os.getenv('HERMES_HOME', '').strip()
     if home:
         hp = Path(home)
         candidates.append(hp / 'integrations.json')

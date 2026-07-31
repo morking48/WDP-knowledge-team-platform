@@ -21,7 +21,18 @@ logger = logging.getLogger(__name__)
 
 
 def _team_home() -> Path:
-    """团队 HERMES_HOME（放 SOUL.md / config.yaml）。"""
+    """团队 HERMES_HOME（放 SOUL.md / config.yaml / integrations.json / 快照 / 技能草稿）。
+
+    ⚠ 不能直接依赖运行时 HERMES_HOME：多用户 per-request profile 切换会把它改来改去，
+    且 admin 绑的 default profile 会被解析成 base home（如 /data），导致
+    「启动时把团队文件铺到 /data/profiles/default、请求时却去 /data 读」的读写错位
+    （生产团队Agent页全空 + /data 下 mkdir Permission denied 的根因）。
+    解法：显式 HERMES_TEAM_HOME 环境变量作为确定性锚点（deployment.yaml 设置），
+    回落顺序：HERMES_TEAM_HOME > HERMES_HOME > default home。
+    """
+    th = os.getenv('HERMES_TEAM_HOME', '').strip()
+    if th:
+        return Path(th)
     env = os.getenv('HERMES_HOME', '').strip()
     if env:
         return Path(env)
