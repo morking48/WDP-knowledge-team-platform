@@ -176,6 +176,11 @@ COPY --chown=root:root scripts/submit_review.py \
 #      docker_init 启 server 前调用，让老账号也自动获得企微文档能力（幂等、不阻断启动）。
 COPY --chown=root:root team-config/scripts/backfill_mcp_config.py /opt/wdp-scripts/
 
+# 8.2) 团队配置母本 → 镜像内置（SOUL.md.team / config.yaml.fallback / *.template）。
+#      启动自愈脚本据此铺设团队根 default 的 SOUL.md / config.yaml / integrations.json，
+#      add-user 也从这里取成员模板。缺了会导致「团队 Agent 页全空」，故必须内置。
+COPY --chown=root:root team-config/ /opt/hermes-team-config/
+
 # -----------------------------------------------------------------------------
 # 7) 运行时环境变量默认值（可被 docker run -e 覆盖）
 # -----------------------------------------------------------------------------
