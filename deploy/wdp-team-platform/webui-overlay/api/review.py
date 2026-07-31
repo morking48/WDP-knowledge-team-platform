@@ -161,6 +161,24 @@ def list_pending() -> list[dict]:
                 continue
             meta['_profile'] = profile
             meta['_meta_file'] = meta_file.name
+            # 为决策中心「按建议去向分组」提供依据：提取 agent 对项目归属的预判。
+            # related_project 藏在提交正文的 frontmatter（审核时才现读），这里顺手提到
+            # meta 里，前端即可按「建议归项目 vs 建议归公共/其它」分组，无需二次请求。
+            try:
+                sug = meta.get('suggestion') or {}
+                sp = (sug.get('suggested_fields') or {}).get('related_project') or ''
+                if not sp:
+                    doc = inbox / meta_file.name[:-len('.meta.json')]
+                    if doc.exists():
+                        m = re.match(r'^---\s*\n(.*?)\n---', doc.read_text(encoding='utf-8'), re.DOTALL)
+                        if m:
+                            for line in m.group(1).splitlines():
+                                if line.strip().startswith('related_project:'):
+                                    sp = line.split(':', 1)[1].split('#')[0].strip().strip('"\'')
+                                    break
+                meta['suggested_project'] = sp
+            except Exception:
+                meta['suggested_project'] = ''
             out.append(meta)
     out.sort(key=lambda x: x.get('submitted_at', ''), reverse=True)
     return out

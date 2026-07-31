@@ -45,17 +45,43 @@ window.loadReview = async function(){
       $('#reviewChat').innerHTML = '';
       return;
     }
-    list.innerHTML = _rvItems.map((r,i)=>`
-      <div class="review-item ${i===0?'sel':''}" data-i="${i}">
+    // 按 agent 建议去向分组（便于批量审）：
+    //   📦 建议归项目 = 建议类目为需求 且 agent 预判了 related_project
+    //   📋 建议归公共 = 建议类目为需求 且 无项目预判
+    //   📥 其它       = 信号 / 设计 / 项目开档等非需求类
+    // 待审项此刻并未真正分池（去向审核时才定），这里只是按「建议」分组呈现，语义成立。
+    const groupOf = (r)=>{
+      const cat = (r.suggestion && r.suggestion.target_category) || r.category || '';
+      if(cat === 'requirements') return (r.suggested_project ? 'project' : 'public');
+      return 'other';
+    };
+    const groups = [
+      {key:'project', label:'📦 建议归项目需求', color:'#7c3aed'},
+      {key:'public',  label:'📋 建议归公共需求', color:'#16a34a'},
+      {key:'other',   label:'📥 其它（信号/设计/开档）', color:'#64748b'},
+    ];
+    const itemHtml = (r, i)=>`
+      <div class="review-item" data-i="${i}">
         <div class="rt">${h(r.title||'(无标题)')}</div>
-        <div class="rm">${tag(r.category||'—','green')}<span>${h(r.username)} · ${h(r.submitted_at||'')}</span></div>
-      </div>`).join('');
+        <div class="rm">${tag(r.category||'—','green')}<span>${h(r.username)} · ${h(r.submitted_at||'')}</span>${r.suggested_project?`<span class="tag" style="background:#ede9fe;color:#6d28d9;font-size:10px;margin-left:4px">→${h(r.suggested_project)}</span>`:''}</div>
+      </div>`;
+    let html = '';
+    for(const g of groups){
+      const members = _rvItems.map((r,i)=>({r,i})).filter(x=>groupOf(x.r)===g.key);
+      if(!members.length) continue;
+      html += `<div class="rv-group-hd" style="font-size:11px;font-weight:700;color:${g.color};padding:8px 4px 4px;border-bottom:1px solid var(--line,#e5e9e7);margin-top:6px">${g.label} <span style="opacity:.6">(${members.length})</span></div>`;
+      html += members.map(x=>itemHtml(x.r, x.i)).join('');
+    }
+    list.innerHTML = html;
     list.querySelectorAll('.review-item').forEach(el => el.addEventListener('click', ()=>{
       list.querySelectorAll('.review-item').forEach(x=>x.classList.remove('sel'));
       el.classList.add('sel');
       renderReviewDetail(+el.dataset.i);
     }));
-    renderReviewDetail(0);
+    // 默认选中第一条（可能在任意分组内）——取第一个渲染出来的 item 的真实索引
+    const first = list.querySelector('.review-item');
+    if(first) first.classList.add('sel');
+    renderReviewDetail(first ? +first.dataset.i : 0);
   }catch(e){
     if(e.status === 403){ list.innerHTML = '<div style="color:var(--ink-3);padding:24px">需要管理员权限</div>'; return; }
     list.innerHTML = `<div style="color:var(--danger);padding:16px">加载失败：${h(e.message)}</div>`;
