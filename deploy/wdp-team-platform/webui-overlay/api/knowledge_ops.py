@@ -170,8 +170,10 @@ raw_excerpt: 归并自 {len(sources)} 条信号
             merged.append(s.get('id'))
     if merged:
         subprocess.run(['git', '-C', str(root), 'add', '-A'], capture_output=True, timeout=10)
-        subprocess.run(['git', '-C', str(root), 'commit', '-m', f'chore(signals): 源信号流转合并 {merged} → {new_id}'],
+        _r = subprocess.run(['git', '-C', str(root), 'commit', '-m', f'chore(signals): 源信号流转合并 {merged} → {new_id}'],
                        capture_output=True, timeout=10)
+        if _r.returncode == 0:
+            _git_push_async(root)
 
     return {'ok': True, 'new_id': new_id, 'merged_count': len(sources), 'git': git1}
 
@@ -266,8 +268,10 @@ tracking:
         meta['status'] = '已转需求'
         sig_file.write_text(_ka._serialize_frontmatter(meta) + '\n' + body, encoding='utf-8')
         subprocess.run(['git', '-C', str(root), 'add', '-A'], capture_output=True, timeout=10)
-        subprocess.run(['git', '-C', str(root), 'commit', '-m', f'chore(signals): {signal_id} 标记已转需求'],
+        _r = subprocess.run(['git', '-C', str(root), 'commit', '-m', f'chore(signals): {signal_id} 标记已转需求'],
                        capture_output=True, timeout=10)
+        if _r.returncode == 0:
+            _git_push_async(root)
 
     # 分配了负责人 → 自动通知（协作体验：对方立刻知道被分配了需求）
     if owner and owner not in ('待分配', '未分配', ''):
@@ -614,9 +618,11 @@ def archive_delete(category: str, item_id: str, operator: str = 'admin') -> ApiR
         return {'error': f'移动失败: {e}'}, 500
     try:
         subprocess.run(['git', '-C', str(root), 'add', '-A'], capture_output=True, timeout=10)
-        subprocess.run(['git', '-C', str(root), 'commit', '-m',
+        _r = subprocess.run(['git', '-C', str(root), 'commit', '-m',
                         f'chore({category}): 删除 {item_id} → 归档待清理 (by {operator})'],
                        capture_output=True, timeout=10)
+        if _r.returncode == 0:
+            _git_push_async(root)
     except Exception:
         pass
     return {'ok': True, 'archived_to': str(dst.relative_to(root)).replace('\\', '/'), 'item_id': item_id}
@@ -644,9 +650,11 @@ def purge_expired_deleted(retention_days: int = 30) -> dict:
     if purged:
         try:
             subprocess.run(['git', '-C', str(root), 'add', '-A'], capture_output=True, timeout=10)
-            subprocess.run(['git', '-C', str(root), 'commit', '-m',
+            _r = subprocess.run(['git', '-C', str(root), 'commit', '-m',
                             f'chore: cron 清理 {len(purged)} 个过期删除文件'],
                            capture_output=True, timeout=10)
+            if _r.returncode == 0:
+                _git_push_async(root)
         except Exception:
             pass
     return {'purged': len(purged), 'files': purged}
