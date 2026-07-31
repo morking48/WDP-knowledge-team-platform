@@ -172,6 +172,10 @@ COPY --chown=root:root scripts/submit_review.py \
      scripts/feishu_doc.py \
      /opt/wdp-scripts/
 
+# 8.1) 启动自愈脚本：给存量 profile 补齐团队级 mcp_servers（企微文档 MCP）
+#      docker_init 启 server 前调用，让老账号也自动获得企微文档能力（幂等、不阻断启动）。
+COPY --chown=root:root team-config/scripts/backfill_mcp_config.py /opt/wdp-scripts/
+
 # -----------------------------------------------------------------------------
 # 7) 运行时环境变量默认值（可被 docker run -e 覆盖）
 # -----------------------------------------------------------------------------
