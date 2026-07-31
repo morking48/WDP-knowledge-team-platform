@@ -22,6 +22,7 @@ from api._wdp_types import ApiResult
 import json
 import logging
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -30,25 +31,62 @@ from api import knowledge as _kb
 logger = logging.getLogger(__name__)
 
 
+# 全局串行锁：保证同一时刻只有一个 push 在执行。
+# 背景：入库/流转的多个操作各自起后台线程并发 push，同时推同一 ref 会撞
+# 「cannot lock ref ... is at X but expected Y」。串行化后彻底消除并发撞车。
+_push_lock = threading.Lock()
+
+
+def _push_with_rebase(root: Path, attempts: int = 3) -> bool:
+    """串行地 push；失败时 pull --rebase 同步远程后重试（应对 non-fast-forward）。"""
+    last_err = ''
+    for _ in range(attempts):
+        try:
+            r = subprocess.run(['git', '-C', str(root), 'push'],
+                               capture_output=True, text=True,
+                               encoding='utf-8', errors='replace', timeout=30)
+        except Exception as e:
+            last_err = str(e)
+            break
+        if r.returncode == 0:
+            return True
+        last_err = (r.stderr or r.stdout or '')[:200]
+        # non-fast-forward / cannot lock ref：远程已被别人推进 → 先 rebase 同步再重试。
+        # --autostash 保护：万一工作树有未提交改动（正常路径 commit 后是干净的），
+        # rebase 前自动 stash、后自动还原；未跟踪文件不受影响。
+        try:
+            subprocess.run(['git', '-C', str(root), 'pull', '--rebase', '--autostash'],
+                           capture_output=True, text=True,
+                           encoding='utf-8', errors='replace', timeout=60)
+        except Exception:
+            pass   # 没网/无 upstream 时 pull 失败，继续下一次 push 尝试或最终告警
+    logger.warning('knowledge git push failed after %d attempts: %s', attempts, last_err)
+    return False
+
+
 def _git_push_async(root: Path) -> None:
     """commit 后静默 push 到远程（后台线程，失败只记日志不阻塞入库）。
 
     背景：知识库此前只有 commit 没有 push，本地/服务器积压上百 commit 而远程为空，
     磁盘故障即丢失历史。这里 commit 成功后自动推远程。
     - 后台线程执行：push 可能慢（网络）不影响入库主流程
+    - 串行锁：多个流转并发 push 会撞 ref lock，加锁串行化根治
+    - rebase 重试：远程领先本地时自动 pull --rebase 再推
     - 失败只记日志：远程冲突/凭据问题不阻塞用户操作，运维可排查
     - 凭据：本机走 Windows 凭据管理器；服务器需在 remote URL 或 git credential store
       配 gitlab deploy token（最小推送权限，一次配置永久生效）
     """
-    import threading
     def _do():
+        # timeout=90：拿不到锁说明已有 push 在跑且排队过久，放弃即可——
+        # 后拿锁的线程会把包含本次 commit 的最新本地状态一并推上去，不会丢。
+        got = _push_lock.acquire(timeout=90)
+        if not got:
+            logger.debug('knowledge git push skipped: another push holds the lock')
+            return
         try:
-            r = subprocess.run(['git', '-C', str(root), 'push'],
-                               capture_output=True, text=True, timeout=30)
-            if r.returncode != 0:
-                logger.warning('knowledge git push failed: %s', (r.stderr or r.stdout)[:200])
-        except Exception as e:
-            logger.warning('knowledge git push exception: %s', e)
+            _push_with_rebase(root)
+        finally:
+            _push_lock.release()
     try:
         threading.Thread(target=_do, daemon=True).start()
     except Exception as e:
