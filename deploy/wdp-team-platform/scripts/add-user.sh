@@ -181,6 +181,14 @@ model:
 # 个人 API Key（可选）。填了走个人额度，不填走团队公共 Key 兜底。
 # api_keys:
 #   openrouter: "sk-or-xxx"
+# 团队级 MCP 服务：企业微信文档（官方 Streamable HTTP 接入，全团队共用）。
+# apikey 走环境变量 WECOM_MCP_APIKEY（K8s Secret 注入，不进仓库）。
+# 未注入该环境变量时 URL 里占位符不展开，MCP 连接失败但不影响其它功能。
+mcp_servers:
+  wecom_doc:
+    url: "https://qyapi.weixin.qq.com/mcp/robot-doc?apikey=${WECOM_MCP_APIKEY}"
+    timeout: 180
+    connect_timeout: 30
 EOF
     log "  写入 config.yaml"
 fi

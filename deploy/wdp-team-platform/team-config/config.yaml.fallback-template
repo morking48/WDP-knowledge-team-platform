@@ -34,3 +34,11 @@ fallback_providers:
     model: z-ai/glm-5.2
   - provider: openrouter
     model: deepseek/deepseek-v4-pro
+
+# 团队级 MCP 服务：企业微信文档（官方 Streamable HTTP，全团队共用）
+# apikey 走环境变量 WECOM_MCP_APIKEY（K8s Secret 注入，不进仓库）
+mcp_servers:
+  wecom_doc:
+    url: "https://qyapi.weixin.qq.com/mcp/robot-doc?apikey=${WECOM_MCP_APIKEY}"
+    timeout: 180
+    connect_timeout: 30

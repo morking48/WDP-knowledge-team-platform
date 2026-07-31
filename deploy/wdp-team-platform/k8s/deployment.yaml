@@ -96,6 +96,18 @@ spec:
                 secretKeyRef:
                   name: wdp-team-git-secret
                   key: GIT_TOKEN
+            # ---- 企业微信文档 MCP apikey（从 Secret 引用）----
+            # config.yaml 里 mcp_servers.wecom_doc 的 URL 用 ${WECOM_MCP_APIKEY} 占位，
+            # Hermes 启动时展开为此环境变量值。Secret 需运维提前创建（一次即可）：
+            #   kubectl create secret generic wdp-team-wecom-secret -n wdp-team \
+            #     --from-literal=WECOM_MCP_APIKEY=<企微机器人文档MCP的apikey>
+            # 未创建该 Secret 时 Pod 起不来（optional:true 可容忍缺失，见下）。
+            - name: WECOM_MCP_APIKEY
+              valueFrom:
+                secretKeyRef:
+                  name: wdp-team-wecom-secret
+                  key: WECOM_MCP_APIKEY
+                  optional: true
             # ---- 可选：跳过权限修复（共享卷场景下避免冲突）----
             - name: HERMES_SKIP_CHMOD
               value: "1"
