@@ -48,8 +48,7 @@ spec:
       containers:
         - name: main-agent
           # 方式一：与 WebUI 使用同一镜像（推荐，减少维护成本）
-          # TODO: 镜像名由 Dockerfile 构建模块确认后替换
-          image: wdp-team-platform:latest
+          image: harbor.51vr.local/wdp-service/wdp-team-platform:3
           imagePullPolicy: IfNotPresent
           #
           # 方式二：使用轻量版镜像（可选）
@@ -87,6 +86,17 @@ spec:
               value: "openrouter"
             - name: HERMES_LLM_MODEL
               value: "moonshotai/kimi-k3"  # 可按需调整
+            # ---- gitlab 凭据（从 Secret 引用，同 WebUI）----
+            - name: GIT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: wdp-team-git-secret
+                  key: GIT_USER
+            - name: GIT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: wdp-team-git-secret
+                  key: GIT_TOKEN
             # ---- 跳过权限修复（共享卷场景）----
             - name: HERMES_SKIP_CHMOD
               value: "1"
@@ -125,3 +135,7 @@ spec:
         - name: profiles-volume
           persistentVolumeClaim:
             claimName: wdp-team-profiles
+      imagePullSecrets:
+        - name: images-51aes
+      nodeSelector:
+        role: worker

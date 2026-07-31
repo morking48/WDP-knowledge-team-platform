@@ -1,0 +1,66 @@
+# ==============================================================================
+# WDP 团队 AI 工作台 — 静态 PV（NFS）
+# ==============================================================================
+# 不使用 StorageClass 动态供给，直接静态创建两块 NFS PV。
+# NFS 服务器：10.100.6.25，导出根：/data/nfs/wdp-team
+#
+# ⚠️ 部署前先在 NFS 服务器（10.100.6.25）上创建两个子目录：
+#     mkdir -p /data/nfs/wdp-team/knowledge /data/nfs/wdp-team/profiles
+#     chown -R 1024:1024 /data/nfs/wdp-team   # 与容器 hermeswebui(1024) 对齐
+#
+# claimRef 已锁定各自的 PVC，防止被其他 PVC 抢绑。
+# ==============================================================================
+
+---
+# PV 1: 团队知识库
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: wdp-team-knowledge-pv
+  labels:
+    app: wdp-team-platform
+    component: storage
+spec:
+  capacity:
+    storage: 50Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain   # 删 PVC 不删数据
+  storageClassName: ""                    # 静态绑定，不走动态供给
+  claimRef:                               # 锁定只绑 wdp-team/wdp-team-knowledge
+    namespace: wdp-team
+    name: wdp-team-knowledge
+  mountOptions:
+    - nfsvers=4.1
+    - hard
+    - noatime
+  nfs:
+    server: 10.100.6.25
+    path: /data/nfs/wdp-team/knowledge
+
+---
+# PV 2: 用户目录
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: wdp-team-profiles-pv
+  labels:
+    app: wdp-team-platform
+    component: storage
+spec:
+  capacity:
+    storage: 100Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  claimRef:
+    namespace: wdp-team
+    name: wdp-team-profiles
+  mountOptions:
+    - nfsvers=4.1
+    - hard
+    - noatime
+  nfs:
+    server: 10.100.6.25
+    path: /data/nfs/wdp-team/profiles

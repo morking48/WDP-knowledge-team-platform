@@ -33,8 +33,8 @@ metadata:
 spec:
   accessModes:
     - ReadWriteMany  # 多节点同时读写
-  # TODO: 运维请根据集群实际 StorageClass 替换下面的占位符
-  storageClassName: "<YOUR_STORAGE_CLASS>"  # 例如: nfs-client, longhorn, cephfs
+  storageClassName: ""                 # 静态 PV 绑定，不走动态供给
+  volumeName: wdp-team-knowledge-pv    # 绑定 k8s/pv.yaml 中的静态 NFS PV
   resources:
     requests:
       storage: 50Gi  # 团队知识库容量，可按需调整
@@ -55,8 +55,8 @@ metadata:
 spec:
   accessModes:
     - ReadWriteMany  # 多节点同时读写
-  # TODO: 运维请根据集群实际 StorageClass 替换下面的占位符
-  storageClassName: "<YOUR_STORAGE_CLASS>"  # 例如: nfs-client, longhorn, cephfs
+  storageClassName: ""                 # 静态 PV 绑定，不走动态供给
+  volumeName: wdp-team-profiles-pv     # 绑定 k8s/pv.yaml 中的静态 NFS PV
   resources:
     requests:
       storage: 100Gi  # 用户目录容量，可按团队规模调整

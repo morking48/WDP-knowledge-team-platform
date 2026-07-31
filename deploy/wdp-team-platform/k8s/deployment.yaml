@@ -38,17 +38,15 @@ spec:
         app: wdp-team-platform
         component: webui
     spec:
-      # 安全上下文：使用非 root 用户运行（与 Dockerfile 中的 hermeswebui 用户对应）
-      securityContext:
-        runAsUser: 1024
-        runAsGroup: 1024
-        fsGroup: 1024
+      # 注意：WebUI 不能设 securityContext.runAsUser！
+      # 官方启动脚本 /hermeswebui_init.bash 必须以 root 启动（做 UID 对齐、
+      # rsync /apptoo→/app、chown），完成后自行降权到 hermeswebui(1024) 运行。
+      # 强制 runAsUser:1024 会导致 init 脚本权限不足直接退出（已踩坑）。
       containers:
         - name: webui
-          # TODO: 镜像名由 Dockerfile 构建模块确认后替换
-          image: wdp-team-platform:latest
+          image: harbor.51vr.local/wdp-service/wdp-team-platform:3
           # IfNotPresent: 优先使用本地已有镜像，避免每次重启都拉取
-          # 生产环境如果镜像 tag 不变，建议改为 Always 确保拿到最新代码
+          # 注意：同 tag 覆盖推送不会生效，每次改镜像递增 tag（1→2→3）
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8787
@@ -83,9 +81,30 @@ spec:
               value: "/opt/hermes-team-skills"
             - name: WDP_SCHEDULER_ENABLED   # 定时任务单点执行：仅主副本设 1，多副本时其余设 0
               value: "1"
+            # ---- gitlab 凭据（从 Secret 引用）----
+            # 配合镜像内 git credential.helper（读 GIT_USER/GIT_TOKEN 环境变量），
+            # 容器内对 gitlab 的 push/pull 自动带凭据。Secret 需运维提前创建：
+            #   kubectl create secret generic wdp-team-git-secret -n wdp-team \
+            #     --from-literal=GIT_USER=xxx --from-literal=GIT_TOKEN=xxx
+            - name: GIT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: wdp-team-git-secret
+                  key: GIT_USER
+            - name: GIT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: wdp-team-git-secret
+                  key: GIT_TOKEN
             # ---- 可选：跳过权限修复（共享卷场景下避免冲突）----
             - name: HERMES_SKIP_CHMOD
               value: "1"
+            # ---- 运行时依赖安装镜像源（内网访问不了 pypi.org）----
+            # docker_init.bash 首次启动会在线安装 web-ui/agent 依赖，uv/pip 都认这两个变量
+            - name: UV_INDEX_URL
+              value: "https://mirrors.aliyun.com/pypi/simple/"
+            - name: PIP_INDEX_URL
+              value: "https://mirrors.aliyun.com/pypi/simple/"
           resources:
             requests:
               cpu: "2"       # 请求 2 核，保证调度到有足够资源的节点
@@ -99,7 +118,7 @@ spec:
               path: /health
               port: 8787
               scheme: HTTP
-            initialDelaySeconds: 30   # 启动后 30 秒开始探测
+            initialDelaySeconds: 600  # 首次启动要在线安装依赖，给足 10 分钟（已踩坑：75s 被探针杀）
             periodSeconds: 15         # 每 15 秒探测一次
             timeoutSeconds: 5         # 每次探测超时 5 秒
             failureThreshold: 3       # 连续失败 3 次则重启容器
@@ -112,7 +131,7 @@ spec:
             initialDelaySeconds: 10   # 启动后 10 秒开始探测
             periodSeconds: 10         # 每 10 秒探测一次
             timeoutSeconds: 5         # 每次探测超时 5 秒
-            failureThreshold: 3       # 连续失败 3 次则从 Service 摘除
+            failureThreshold: 60      # 首次初始化慢，容忍 10 分钟内未就绪（不重启只摘流量）
           volumeMounts:
             # 挂载团队知识库共享卷
             - name: knowledge-volume
@@ -129,3 +148,7 @@ spec:
         - name: profiles-volume
           persistentVolumeClaim:
             claimName: wdp-team-profiles
+      imagePullSecrets:
+        - name: images-51aes
+      nodeSelector:
+        role: worker

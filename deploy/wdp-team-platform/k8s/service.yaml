@@ -2,15 +2,16 @@
 # WDP 团队 AI 工作台 — WebUI Service
 # ==============================================================================
 # 作用：
-#   为 WebUI Deployment 提供集群内稳定的访问入口。
-#   使用 ClusterIP 类型，只在集群内部暴露，外部流量通过 Ingress 进入。
+#   为 WebUI Deployment 提供稳定访问入口。
+#   使用 NodePort 类型：既可在集群内通过 Service DNS 访问，也可通过
+#   任意节点 IP:NodePort 从外部直连（Ingress 未就绪时的兜底/调试入口）。
 #
 # 关于 Sticky Session（会话亲和）：
 #   WebUI 是有状态服务（SSE 长连接、会话状态保存在内存中），
 #   因此需要保证同一用户的请求始终落到同一个 Pod 上。
-#   本 Service 本身不实现 sticky session，需要在 Ingress 层配置：
-#     - 按 cookie 名称 hermes_session 或 hermes_profile 做会话亲和
-#     - 具体 annotation 示例见 ingress.yaml
+#   - 走 Ingress：由 Ingress 层的 cookie affinity 保证（见 ingress.yaml）
+#   - 走 NodePort 直连：本 Service 用 sessionAffinity: ClientIP 兜底
+#     （同一客户端 IP 的连接在 3 小时内保持落到同一 Pod）
 # ==============================================================================
 
 apiVersion: v1
@@ -22,12 +23,23 @@ metadata:
     app: wdp-team-platform
     component: webui
 spec:
-  type: ClusterIP  # 仅在集群内部暴露，外部通过 Ingress 访问
+  # NodePort：在每个节点上开放同一个端口，外部可通过 <任意节点IP>:<nodePort> 直连
+  # 如果集群禁止 NodePort、只允许 Ingress，改回 ClusterIP 即可
+  type: NodePort
+  # ClientIP 亲和：NodePort 直连场景下，用客户端 IP 兜底 sticky session
+  # （Ingress 场景下由 cookie affinity 处理，本项不影响）
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 10800  # 3 小时，与 WebUI 会话过期保持一致
   selector:
     app: wdp-team-platform
     component: webui
   ports:
     - name: http
-      port: 8787        # Service 端口
+      port: 8787        # Service 端口（集群内访问用）
       targetPort: 8787  # 容器端口（与 Deployment 中 containerPort 对应）
+      # nodePort 范围默认 30000–32767，可显式指定固定端口便于运维记忆；
+      # 不写则由 K8s 自动分配（每次删重建会变）
+      nodePort: 30787
       protocol: TCP
