@@ -46,7 +46,15 @@ ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
 # （k8s 默认挂载点为 /data/profiles 和 /data/knowledge）
 PROFILES_ROOT="${PROFILES_ROOT:-/data/profiles}"
 KNOWLEDGE_ROOT="${KNOWLEDGE_ROOT:-/data/knowledge}"
-TEAM_CONFIG_DIR="${TEAM_CONFIG_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/team-config}"
+# TEAM_CONFIG_DIR：团队模板目录。生产镜像内置在 /opt/hermes-team-config；
+# 本地开发回落到脚本相对路径 ../team-config。
+if [[ -z "${TEAM_CONFIG_DIR:-}" ]]; then
+  if [[ -d /opt/hermes-team-config ]]; then
+    TEAM_CONFIG_DIR=/opt/hermes-team-config
+  else
+    TEAM_CONFIG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/team-config"
+  fi
+fi
 SKIP_API="${SKIP_API:-0}"
 
 usage() {
