@@ -75,6 +75,11 @@ spec:
             # （团队Agent页全空 + /data 下 Permission denied 的根因）。
             - name: HERMES_TEAM_HOME
               value: "/data/profiles/default"
+            # 团队技能可写目录：让管理员在平台 UI「发布技能」即时生效，不必重打镜像+运维发版。
+            # 启动时 backfill 脚本把镜像内置技能(/opt/hermes-team-config/skills)播种到此可写卷
+            # (缺则补、已有不覆盖)，之后 UI 发布直接写这里。放团队卷下，随 PVC 持久化。
+            - name: WDP_TEAM_SKILLS_DIR
+              value: "/data/profiles/default/team-skills"
             # ---- WebUI 状态目录 ----
             # 默认在 HERMES_HOME/webui 下，显式指定到共享 profiles 卷
             - name: HERMES_WEBUI_STATE_DIR

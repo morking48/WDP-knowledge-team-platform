@@ -173,9 +173,56 @@ def seed_team_root() -> None:
             pass
 
 
+def seed_team_skills() -> None:
+    """把团队技能从镜像只读母本播种到可写卷，让 UI「发布技能」能即时写入生效。
+
+    根因：团队技能原先只在镜像只读目录 /opt/hermes-team-skills，UI 发布写不进去 →
+    每次改技能都要重新打镜像 + 运维发版。迁到可写卷后，UI 发布直接写卷即时生效。
+
+    播种策略（缺则补、已有不覆盖）：
+      - 卷里没有的技能 → 从镜像母本拷入（含新版本带来的新技能）。
+      - 卷里已有的技能 → 不覆盖（保护管理员在 UI 改过的内容）。
+    可写卷目录由 WDP_TEAM_SKILLS_DIR 指定（deployment.yaml 设为团队卷下的 team-skills）。
+    """
+    import shutil
+    dst_env = os.getenv("WDP_TEAM_SKILLS_DIR", "").strip()
+    if not dst_env:
+        print("[seed_team_skills] 未设 WDP_TEAM_SKILLS_DIR，跳过（技能仍走镜像只读目录）")
+        return
+    # 逗号分隔时取第一个作为可写播种目标
+    dst_root = Path(dst_env.split(",")[0].strip())
+    src_root = Path(os.getenv("TEAM_CONFIG_SRC", "/opt/hermes-team-config")) / "skills"
+    if not src_root.is_dir():
+        print(f"[seed_team_skills] 镜像技能母本不存在 {src_root}，跳过")
+        return
+    try:
+        dst_root.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        print(f"[seed_team_skills] 无法创建可写技能目录 {dst_root}: {e}")
+        return
+    added = kept = 0
+    for sd in sorted(src_root.iterdir()):
+        if not sd.is_dir() or not (sd / "SKILL.md").is_file():
+            continue
+        target = dst_root / sd.name
+        if target.exists():
+            kept += 1
+            continue
+        try:
+            shutil.copytree(sd, target)
+            added += 1
+            print(f"[seed_team_skills] 播种技能 {sd.name} ✅")
+        except Exception as e:
+            print(f"[seed_team_skills] 播种 {sd.name} 失败: {e}")
+    print(f"[seed_team_skills] 完成 — 新增 {added} / 保留(UI可改) {kept} @ {dst_root}")
+
+
 def main() -> int:
     # ① 先铺团队根母本（SOUL.md / config.yaml），根治团队 Agent 页空
     seed_team_root()
+
+    # ①.5 播种团队技能到可写卷（让 UI 发布技能即时生效，免运维发版）
+    seed_team_skills()
 
     # ② 再做 MCP 配置补齐 + apikey 注入
     apikey = _resolve_apikey()
