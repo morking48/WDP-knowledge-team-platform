@@ -80,6 +80,11 @@ spec:
             # (缺则补、已有不覆盖)，之后 UI 发布直接写这里。放团队卷下，随 PVC 持久化。
             - name: WDP_TEAM_SKILLS_DIR
               value: "/data/profiles/default/team-skills"
+            # 成员 profile 父目录：发布团队规则时遍历此目录下每个成员 profile。
+            # 生产成员在 /data/profiles/<user>（团队根 default 的兄弟），显式指定避免
+            # "团队根/profiles" 误拼成 /data/profiles/default/profiles(不存在→发布0个成员)。
+            - name: HERMES_PROFILES_ROOT
+              value: "/data/profiles"
             # ---- WebUI 状态目录 ----
             # 默认在 HERMES_HOME/webui 下，显式指定到共享 profiles 卷
             - name: HERMES_WEBUI_STATE_DIR

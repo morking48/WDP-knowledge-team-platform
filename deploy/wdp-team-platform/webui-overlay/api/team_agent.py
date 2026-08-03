@@ -197,6 +197,28 @@ def _inject_block(soul_text: str, block: str) -> str:
     return wrapped + '\n\n' + soul_text if soul_text.strip() else wrapped + '\n'
 
 
+def _member_profiles_root() -> Path:
+    """成员 profile 所在的父目录（遍历它下面每个成员发布团队规则）。
+
+    两种布局：
+      - 本地开发：HERMES_HOME=hermes-home，成员在 hermes-home/profiles/*（team_home 的子目录）
+      - 生产多用户：HERMES_TEAM_HOME=/data/profiles/default，成员在 /data/profiles/*
+        （team_home 的兄弟——成员目录的父级 = team_home 的父级）
+    解析优先级：HERMES_PROFILES_ROOT 显式指定 > team_home/profiles(存在) > team_home 的父级(名为 profiles)。
+    """
+    env = os.getenv('HERMES_PROFILES_ROOT', '').strip()
+    if env:
+        return Path(env)
+    home = _team_home()
+    sub = home / 'profiles'
+    if sub.is_dir():
+        return sub
+    # 生产：team_home 形如 .../profiles/default，成员在其父级 .../profiles
+    if home.parent.name == 'profiles' or home.name == 'default':
+        return home.parent
+    return sub
+
+
 def publish_team_rules() -> ApiResult:
     """把团队母本 SOUL.md 发布到所有成员 profile 的 SOUL.md（幂等替换标记块）。"""
     sp = _soul_path()
@@ -206,10 +228,9 @@ def publish_team_rules() -> ApiResult:
         block = sp.read_text(encoding='utf-8')
     except Exception as e:
         return {'error': f'读团队规则失败: {e}'}, 500
-    home = _team_home()
     published = []
     errors = []
-    profiles_dir = home / 'profiles'
+    profiles_dir = _member_profiles_root()
     targets = []
     if profiles_dir.is_dir():
         targets = [p for p in profiles_dir.iterdir() if p.is_dir()]
