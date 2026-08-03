@@ -129,15 +129,17 @@ def seed_team_root() -> None:
     if not src.is_dir():
         print(f"[seed_team_root] 母本源不存在 {src}，跳过")
         return
-    # (母本文件, 目标文件, 团队标记) —— 目标缺失时铺；已存在但"不含团队标记"(即官方默认
-    # SOUL 或占位内容)时也覆盖成母本；只有"真正的团队内容"才保护不覆盖。
-    # 背景：Hermes 首启会自建官方默认 SOUL.md，seed 若简单"存在就跳过"，团队规则就永远
-    # 停留在官方默认（生产团队Agent页显示 "You are Hermes Agent..." 的根因）。
+    # (母本文件, 目标文件, 团队标记列表) —— 目标缺失时铺；已存在但"不含任何团队标记"
+    # (即 Hermes 冷启抢跑自建的官方默认 SOUL 或占位)时也覆盖成母本；命中任一标记
+    # 才视为"真正的团队内容"保护不覆盖。用多个结构性标记(而非单个业务词)更抗改写：
+    # 管理员即使改写了正文，只要保留 SOUL 结构章节，就不会被误判成默认而覆盖。
+    # 背景：Hermes 首启会自建官方默认 SOUL.md 抢跑，seed 若简单"存在就跳过"，团队规则
+    # 就永远停留在官方默认（生产团队Agent页显示 "You are Hermes Agent..." 的根因）。
     seeds = [
-        ("SOUL.md.team", "SOUL.md", "WDP 产品团队"),
+        ("SOUL.md.team", "SOUL.md", ["## 你的身份与场景", "## 规则优先级", "WDP 产品团队", "团队铁律"]),
         ("config.yaml.fallback-template", "config.yaml", None),
     ]
-    for src_name, dst_name, marker in seeds:
+    for src_name, dst_name, markers in seeds:
         sp = src / src_name
         dp = home_p / dst_name
         if not sp.is_file():
@@ -148,16 +150,16 @@ def seed_team_root() -> None:
                 cur = dp.read_text(encoding="utf-8")
             except Exception:
                 cur = ""
-            # 有团队标记则视为管理员真配过的内容，保护不覆盖
-            if marker and marker in cur:
-                print(f"[seed_team_root] {dst_name}: 已含团队内容，保护不覆盖")
+            # 命中任一团队标记 → 管理员真配过的内容，保护不覆盖
+            if markers and any(m in cur for m in markers):
+                print(f"[seed_team_root] {dst_name}: 已含团队规则，保护不覆盖")
                 continue
             # config.yaml 无标记概念：已存在就保护（成员/团队可能改过模型），只补不覆盖
-            if marker is None:
+            if markers is None:
                 print(f"[seed_team_root] {dst_name}: 已存在，跳过（保护现有）")
                 continue
-            # SOUL 存在但不含团队标记 → 官方默认/占位，覆盖成团队母本
-            print(f"[seed_team_root] {dst_name}: 现有内容非团队规则(官方默认?)，覆盖为母本 {src_name}")
+            # SOUL 存在但不含任何团队标记 → 官方默认/冷启抢跑的空壳，覆盖成团队母本
+            print(f"[seed_team_root] {dst_name}: 现有内容非团队规则(官方默认/抢跑空壳)，覆盖为母本 {src_name}")
         try:
             dp.write_text(sp.read_text(encoding="utf-8"), encoding="utf-8")
             print(f"[seed_team_root] {dst_name}: 已从母本 {src_name} 铺设 ✅")
