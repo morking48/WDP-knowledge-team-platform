@@ -956,18 +956,20 @@ async function loadTeamIntegrations(d){
 
     <div style="border:1px solid var(--line);border-radius:12px;padding:16px;background:rgba(255,255,255,.7);max-width:560px;margin-top:14px">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-        <span style="font-size:15px;font-weight:700">企业微信文档（MCP）</span>${wmTag}
+        <span style="font-size:15px;font-weight:700">企业微信文档（MCP）</span>${wmTag}${wm.source==='secret'?'<span class="tag gray" style="font-size:10px">由 Secret 管理</span>':''}
       </div>
       <div style="font-size:11.5px;color:var(--ink-3);margin-bottom:14px">
-        企微机器人文档 MCP 的 apikey（企微「API模式机器人」提供的接入链接里 ?apikey= 后面那串）。配置后 agent 可直接读写企微文档/智能表格。${wm.updated_at?('上次更新：'+h(wm.updated_at)):''}
+        企微机器人文档 MCP 的 apikey（企微「API模式机器人」接入链接里 ?apikey= 后那串）。配置后 agent 可直接读写企微文档/智能表格。${wm.updated_at?('上次更新：'+h(wm.updated_at)):''}
       </div>
       <div style="margin-bottom:16px">
-        <label style="font-size:12px;font-weight:600;color:var(--ink-2)">apikey</label>
-        <input id="wmApikey" type="text" placeholder="${wm.configured?'已保存（留空或不改则保留原值）':'粘贴 MCP 链接里的 apikey'}" value="${h(wm.apikey||'')}"
-          style="width:100%;padding:9px 12px;border-radius:9px;border:1px solid var(--line);font-size:13px;font-family:ui-monospace,monospace;background:#fff;color:var(--ink);margin-top:5px">
-        <div style="font-size:11px;color:var(--ink-3);margin-top:4px">🔒 存团队配置（integrations.json，不进仓库）。保存后<b>重启平台</b>生效（启动时注入各成员配置）。</div>
+        <label style="font-size:12px;font-weight:600;color:var(--ink-2)">apikey${wm.source==='secret'?'（当前生效值，只读）':''}</label>
+        <input id="wmApikey" type="text" ${wm.source==='secret'?'readonly':''} placeholder="${wm.configured?'已配置':'粘贴 MCP 链接里的 apikey'}" value="${h(wm.apikey||'')}"
+          style="width:100%;padding:9px 12px;border-radius:9px;border:1px solid var(--line);font-size:13px;font-family:ui-monospace,monospace;background:${wm.source==='secret'?'#f5f5f5':'#fff'};color:var(--ink);margin-top:5px">
+        <div style="font-size:11px;color:var(--ink-3);margin-top:4px">${wm.source==='secret'
+          ? '🔒 当前由 K8s Secret（WECOM_MCP_APIKEY）统一管理，全团队生效、新建用户自动可用、无需重启。要更换请让运维更新 Secret。'
+          : '🔒 存团队配置（integrations.json）。⚠️ 此方式新建用户需重启才生效；推荐改用 K8s Secret（运维建一次，永久生效、新用户免重启）。'}</div>
       </div>
-      <div style="text-align:right"><button class="btn sm primary" id="saveWecomMcpBtn">保存企微 apikey</button></div>
+      ${wm.source==='secret'?'':'<div style="text-align:right"><button class="btn sm primary" id="saveWecomMcpBtn">保存企微 apikey</button></div>'}
     </div>`;
   $('#saveFeishuBtn').onclick = async ()=>{
     const app_id = $('#fsAppId').value.trim();
@@ -981,7 +983,8 @@ async function loadTeamIntegrations(d){
       if(window.loadTeamAgent) window.loadTeamAgent();
     }catch(e){ toast('保存失败：'+e.message, true); }
   };
-  $('#saveWecomMcpBtn').onclick = async ()=>{
+  const _wmBtn = $('#saveWecomMcpBtn');
+  if(_wmBtn) _wmBtn.onclick = async ()=>{
     const apikey = $('#wmApikey').value.trim();
     if(!apikey){ toast('请填 apikey', true); return; }
     try{

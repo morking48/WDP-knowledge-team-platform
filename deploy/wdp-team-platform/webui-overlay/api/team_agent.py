@@ -339,7 +339,13 @@ def _load_team_integrations() -> dict:
 
 
 def get_team_integrations() -> dict:
-    """读团队集成配置（secret 打码）。"""
+    """读团队集成配置（secret 打码）。
+
+    wecom_mcp 特殊：生效来源是环境变量 WECOM_MCP_APIKEY（K8s Secret 注入）——
+    UI 只读展示"实际生效的 key"（来自 Secret），比 integrations.json 更准；
+    若环境变量没有才回落 integrations.json（UI 曾填过的）。
+    """
+    import os
     data = _load_team_integrations()
     out = {}
     for prov, fields in _SUPPORTED_INTEGRATIONS.items():
@@ -351,6 +357,15 @@ def get_team_integrations() -> dict:
         entry['configured'] = bool(cfg.get(fields[0]) and cfg.get(fields[-1]))
         entry['updated_at'] = cfg.get('updated_at', '')
         out[prov] = entry
+    # wecom_mcp：优先反映环境变量（Secret）实际生效值
+    env_ak = os.getenv('WECOM_MCP_APIKEY', '').strip()
+    if env_ak:
+        out.setdefault('wecom_mcp', {})
+        out['wecom_mcp']['apikey'] = _mask_secret(env_ak)
+        out['wecom_mcp']['configured'] = True
+        out['wecom_mcp']['source'] = 'secret'   # 前端据此提示"由 K8s Secret 管理"
+    elif 'wecom_mcp' in out and out['wecom_mcp'].get('configured'):
+        out['wecom_mcp']['source'] = 'integrations'
     return {'integrations': out}
 
 
