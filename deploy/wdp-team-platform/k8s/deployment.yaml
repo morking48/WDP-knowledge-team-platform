@@ -75,11 +75,10 @@ spec:
             # （团队Agent页全空 + /data 下 Permission denied 的根因）。
             - name: HERMES_TEAM_HOME
               value: "/data/profiles/default"
-            # 团队技能可写目录：让管理员在平台 UI「发布技能」即时生效，不必重打镜像+运维发版。
-            # 启动时 backfill 脚本把镜像内置技能(/opt/hermes-team-config/skills)播种到此可写卷
-            # (缺则补、已有不覆盖)，之后 UI 发布直接写这里。放团队卷下，随 PVC 持久化。
+            # 团队技能目录：可写卷优先(UI 发布即时生效) + 镜像内置只读兜底(逗号分隔，
+            # 万一可写卷播种失败仍能读到镜像技能)。启动 backfill 把镜像技能播种到可写卷。
             - name: WDP_TEAM_SKILLS_DIR
-              value: "/data/profiles/default/team-skills"
+              value: "/data/profiles/default/team-skills,/opt/hermes-team-skills"
             # 成员 profile 父目录：发布团队规则时遍历此目录下每个成员 profile。
             # 生产成员在 /data/profiles/<user>（团队根 default 的兄弟），显式指定避免
             # "团队根/profiles" 误拼成 /data/profiles/default/profiles(不存在→发布0个成员)。
@@ -93,8 +92,6 @@ spec:
             # WebUI 和 Agent 会读取此目录下的共享知识/技能
             - name: HERMES_KNOWLEDGE_DIR    # ⚠️ 代码读的是这个名字（api/knowledge.py 等 7 处）
               value: "/data/knowledge"
-            - name: WDP_TEAM_SKILLS_DIR     # 个人中心"团队技能"只读展示源（镜像内置）
-              value: "/opt/hermes-team-skills"
             - name: WDP_SCHEDULER_ENABLED   # 定时任务单点执行：仅主副本设 1，多副本时其余设 0
               value: "1"
             # ---- gitlab 凭据（从 Secret 引用）----
