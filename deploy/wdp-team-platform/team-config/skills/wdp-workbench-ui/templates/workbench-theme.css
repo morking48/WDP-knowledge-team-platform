@@ -1,0 +1,68 @@
+/* WDP 团队工作台 · 视觉主题基础（绿白液体玻璃 + 淡网格）
+ * 与管理员逐轮确认的定稿 token——新页面直接复制本段，勿改方向。
+ * 用法：页面 <style> 开头引入本文件内容，组件类名沿用原型。
+ */
+:root{
+  --brand:#16a34a; --brand-strong:#15803d; --brand-soft:rgba(22,163,74,.10);
+  --ink:#0f1f16; --ink-2:#4b5d52; --ink-3:#8aa393;
+  --line:rgba(22,163,74,.16); --line-2:rgba(22,163,74,.10);
+  --glass:rgba(255,255,255,.6); --glass-strong:rgba(255,255,255,.78);
+  --danger:#dc2626; --amber:#d97706; --blue:#2563eb; --purple:#7c3aed;
+  --shadow:0 4px 24px rgba(22,163,74,.08), inset 0 1px 0 rgba(255,255,255,.7);
+  --radius:18px; --radius-sm:12px;
+}
+body{
+  color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  font-size:14px;
+  background:
+    linear-gradient(rgba(22,163,74,.045) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(22,163,74,.045) 1px,transparent 1px),
+    linear-gradient(160deg,#f4faf6 0%,#eef7f0 55%,#e9f4ec 100%);
+  background-size:28px 28px,28px 28px,100% 100%;
+}
+
+/* 液体玻璃面板 */
+.panel{
+  background:var(--glass-strong);
+  backdrop-filter:blur(20px) saturate(160%);
+  -webkit-backdrop-filter:blur(20px) saturate(160%);
+  border:1px solid rgba(255,255,255,.65);
+  border-radius:var(--radius);
+  box-shadow:var(--shadow);
+}
+
+/* 主按钮（绿渐变，可交互：hover 提亮 + active 下沉） */
+.btn.primary{
+  background:linear-gradient(145deg,#22c55e,#16a34a);
+  color:#fff;border-color:transparent;
+  box-shadow:0 4px 14px rgba(22,163,74,.3),inset 0 1px 0 rgba(255,255,255,.3);
+}
+.btn.primary:hover{filter:brightness(1.05)}
+.btn.primary:active{transform:scale(.97)}
+
+/* 标签（语义色） */
+.tag{display:inline-flex;padding:3px 11px;border-radius:11px;font-size:11px;font-weight:600}
+.tag.green{background:var(--brand-soft);color:var(--brand-strong)}
+.tag.amber{background:rgba(217,119,6,.12);color:var(--amber)}
+.tag.red{background:rgba(220,38,38,.12);color:var(--danger)}
+.tag.blue{background:rgba(37,99,235,.12);color:var(--blue)}
+.tag.purple{background:rgba(124,58,237,.12);color:var(--purple)}
+.tag.gray{background:rgba(75,93,82,.1);color:var(--ink-2)}
+
+/* ── 可交互 vs 不可交互分化（铁律）── */
+/* 可交互按钮：有边框 + hover + active 反馈 */
+.btn{border:1px solid var(--line);background:rgba(255,255,255,.7);border-radius:12px;
+  padding:8px 16px;font-size:12px;font-weight:600;color:var(--ink-2);cursor:pointer;transition:all .15s}
+.btn:hover{border-color:var(--brand);color:var(--brand-strong);background:var(--brand-soft)}
+.btn:active{transform:scale(.97)}
+
+/* 纯展示身份卡：透明无框、无点击暗示 */
+.user-card{cursor:default;user-select:none;background:transparent;border-top:1px solid var(--line-2)}
+.user-card .ur{font-size:10px;color:var(--ink-3)}   /* 角色身份 = 灰色小字，不用带底色标签 */
+
+/* chips（提示词模板）：可点但禁用态必须置灰 */
+.chip{font-size:11px;padding:5px 12px;border-radius:14px;border:1px solid var(--line);
+  background:rgba(255,255,255,.6);color:var(--ink-2);cursor:pointer}
+.chip:hover:not(:disabled){border-color:var(--brand);color:var(--brand-strong);background:var(--brand-soft)}
+.chip:disabled{opacity:.4;cursor:not-allowed;color:var(--ink-3);background:rgba(255,255,255,.35)}

@@ -129,20 +129,35 @@ def seed_team_root() -> None:
     if not src.is_dir():
         print(f"[seed_team_root] 母本源不存在 {src}，跳过")
         return
-    # (母本文件, 目标文件) —— 目标缺失才铺
+    # (母本文件, 目标文件, 团队标记) —— 目标缺失时铺；已存在但"不含团队标记"(即官方默认
+    # SOUL 或占位内容)时也覆盖成母本；只有"真正的团队内容"才保护不覆盖。
+    # 背景：Hermes 首启会自建官方默认 SOUL.md，seed 若简单"存在就跳过"，团队规则就永远
+    # 停留在官方默认（生产团队Agent页显示 "You are Hermes Agent..." 的根因）。
     seeds = [
-        ("SOUL.md.team", "SOUL.md"),
-        ("config.yaml.fallback-template", "config.yaml"),
+        ("SOUL.md.team", "SOUL.md", "WDP 产品团队"),
+        ("config.yaml.fallback-template", "config.yaml", None),
     ]
-    for src_name, dst_name in seeds:
+    for src_name, dst_name, marker in seeds:
         sp = src / src_name
         dp = home_p / dst_name
-        if dp.exists():
-            print(f"[seed_team_root] {dst_name}: 已存在，跳过（保护现有）")
-            continue
         if not sp.is_file():
             print(f"[seed_team_root] 母本缺失 {sp}，跳过 {dst_name}")
             continue
+        if dp.exists():
+            try:
+                cur = dp.read_text(encoding="utf-8")
+            except Exception:
+                cur = ""
+            # 有团队标记则视为管理员真配过的内容，保护不覆盖
+            if marker and marker in cur:
+                print(f"[seed_team_root] {dst_name}: 已含团队内容，保护不覆盖")
+                continue
+            # config.yaml 无标记概念：已存在就保护（成员/团队可能改过模型），只补不覆盖
+            if marker is None:
+                print(f"[seed_team_root] {dst_name}: 已存在，跳过（保护现有）")
+                continue
+            # SOUL 存在但不含团队标记 → 官方默认/占位，覆盖成团队母本
+            print(f"[seed_team_root] {dst_name}: 现有内容非团队规则(官方默认?)，覆盖为母本 {src_name}")
         try:
             dp.write_text(sp.read_text(encoding="utf-8"), encoding="utf-8")
             print(f"[seed_team_root] {dst_name}: 已从母本 {src_name} 铺设 ✅")
