@@ -34,6 +34,12 @@ _DEFAULT_RULE = """你是 WDP 产品团队的信号归并助手。给你一批"�
 
 
 def _team_home() -> Path:
+    # 团队级配置锚点：归并规则/审核规则是团队共用文件，必须用 HERMES_TEAM_HOME
+    # 确定性锚点（同 team_agent._team_home）——否则 per-request profile 切换会把
+    # HERMES_HOME 改写成 base home(/data)，导致规则读写错位 + /data 权限报错。
+    th = os.getenv('HERMES_TEAM_HOME', '').strip()
+    if th:
+        return Path(th)
     env = os.getenv('HERMES_HOME', '').strip()
     if env:
         return Path(env)
